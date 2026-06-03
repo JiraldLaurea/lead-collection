@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Lead {
+  id              Int      @id @default(autoincrement())
+  placeId         String   @unique @map("place_id")
+  businessName    String   @map("business_name")
+  category        String?
+  formattedAddress String? @map("formatted_address")
+  phoneNumber     String?  @map("phone_number")
+  email           String?
+  emailSource     String?  @map("email_source")
+  emailStatus     String?  @map("email_status")
+  emailCheckedAt  DateTime? @map("email_checked_at")
+  websiteUrl      String?  @map("website_url")
+  googleMapsUrl   String?  @map("google_maps_url")
+  rating          Float?
+  reviewCount     Int?     @map("review_count")
+  businessStatus  String?  @map("business_status")
+  openingHours    String?  @map("opening_hours")
+  searchKeyword   String   @map("search_keyword")
+  searchLocation  String   @map("search_location")
+  source          String   @default("google_places_api")
+  collectedAt     DateTime @map("collected_at")
+  lastRefreshedAt DateTime? @map("last_refreshed_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([searchKeyword])
+  @@index([searchLocation])
+  @@index([category])
+  @@map("leads")
+}
+
+model SearchJob {
+  id              Int       @id @default(autoincrement())
+  searchKeyword   String    @map("search_keyword")
+  searchLocation  String    @map("search_location")
+  searchType      String    @map("search_type")
+  status          String
+  totalFound      Int       @default(0) @map("total_found")
+  totalSaved      Int       @default(0) @map("total_saved")
+  totalDuplicates Int       @default(0) @map("total_duplicates")
+  errorMessage    String?   @map("error_message")
+  startedAt       DateTime  @map("started_at")
+  finishedAt      DateTime? @map("finished_at")
+
+  @@index([status])
+  @@map("search_jobs")
+}
+
+model AccessLog {
+  id        Int      @id @default(autoincrement())
+  ipAddress String   @map("ip_address")
+  path      String
+  method    String
+  decision  String
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([decision])
+  @@index([createdAt])
+  @@map("access_logs")
+}
+
+model ApiErrorLog {
+  id             Int      @id @default(autoincrement())
+  provider       String
+  endpoint       String?
+  errorCode      String?  @map("error_code")
+  errorMessage   String?  @map("error_message")
+  requestContext String?  @map("request_context")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([provider])
+  @@map("api_error_logs")
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("app_settings")
+}

@@ -1,0 +1,97 @@
+import fs from "node:fs";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+
+const dataDir = path.join(process.cwd(), "data");
+fs.mkdirSync(dataDir, { recursive: true });
+
+const dbPath = path.join(dataDir, "leads.sqlite");
+const db = new DatabaseSync(dbPath);
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS leads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  place_id TEXT NOT NULL UNIQUE,
+  business_name TEXT NOT NULL,
+  category TEXT,
+  formatted_address TEXT,
+  phone_number TEXT,
+  website_url TEXT,
+  google_maps_url TEXT,
+  rating REAL,
+  review_count INTEGER,
+  business_status TEXT,
+  opening_hours TEXT,
+  search_keyword TEXT NOT NULL,
+  search_location TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'google_places_api',
+  collected_at DATETIME NOT NULL,
+  last_refreshed_at DATETIME,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS search_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  search_keyword TEXT NOT NULL,
+  search_location TEXT NOT NULL,
+  search_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  total_found INTEGER DEFAULT 0,
+  total_saved INTEGER DEFAULT 0,
+  total_duplicates INTEGER DEFAULT 0,
+  error_message TEXT,
+  started_at DATETIME NOT NULL,
+  finished_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS access_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ip_address TEXT NOT NULL,
+  path TEXT NOT NULL,
+  method TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  reason TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS api_error_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT NOT NULL,
+  endpoint TEXT,
+  error_code TEXT,
+  error_message TEXT,
+  request_context TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS leads_search_keyword_idx ON leads(search_keyword);
+CREATE INDEX IF NOT EXISTS leads_search_location_idx ON leads(search_location);
+CREATE INDEX IF NOT EXISTS leads_category_idx ON leads(category);
+CREATE INDEX IF NOT EXISTS access_logs_decision_idx ON access_logs(decision);
+CREATE INDEX IF NOT EXISTS access_logs_created_at_idx ON access_logs(created_at);
+CREATE INDEX IF NOT EXISTS api_error_logs_provider_idx ON api_error_logs(provider);
+CREATE INDEX IF NOT EXISTS search_jobs_status_idx ON search_jobs(status);
+`);
+
+const leadColumns = new Set(db.prepare("PRAGMA table_info(leads)").all().map((column) => column.name));
+const addLeadColumn = (name, definition) => {
+  if (!leadColumns.has(name)) {
+    db.exec(`ALTER TABLE leads ADD COLUMN ${definition}`);
+  }
+};
+
+addLeadColumn("email", "email TEXT");
+addLeadColumn("email_source", "email_source TEXT");
+addLeadColumn("email_status", "email_status TEXT");
+addLeadColumn("email_checked_at", "email_checked_at DATETIME");
+
+db.close();
+console.log(`SQLite database initialized at ${dbPath}`);
