@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { LoadingModal } from "@/components/LoadingModal";
 import { defaultEmailBodyTemplate } from "@/lib/email-template-defaults";
 
@@ -13,6 +13,27 @@ export function EmailTemplateSettingsForm({ initialBody }: EmailTemplateSettings
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [noticeType, setNoticeType] = useState<"success" | "error">("success");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const businessNamePlaceholder = "[business_name]";
+
+  function insertBusinessNamePlaceholder() {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setBody((current) => `${current}${current ? " " : ""}${businessNamePlaceholder}`);
+      return;
+    }
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const nextBody = `${body.slice(0, start)}${businessNamePlaceholder}${body.slice(end)}`;
+    setBody(nextBody);
+
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const nextCursorPosition = start + businessNamePlaceholder.length;
+      textarea.setSelectionRange(nextCursorPosition, nextCursorPosition);
+    });
+  }
 
   async function saveTemplate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,9 +67,17 @@ export function EmailTemplateSettingsForm({ initialBody }: EmailTemplateSettings
       </div>
       <label>
         Body
-        <textarea className="settings-template-textarea" value={body} onChange={(event) => setBody(event.target.value)} rows={14} />
+        <textarea ref={textareaRef} className="settings-template-textarea" value={body} onChange={(event) => setBody(event.target.value)} rows={14} />
       </label>
-      <p className="muted compose-hint">Use [business_name] to personalize each email.</p>
+      <div className="settings-template-helper">
+        <button type="button" className="secondary compact-button" onClick={insertBusinessNamePlaceholder} disabled={loading}>
+          <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
+          </svg>
+          Add [business_name]
+        </button>
+      </div>
       {notice ? <div className={`notice ${noticeType === "success" ? "notice-success" : "notice-error"}`}>{notice}</div> : null}
       <div className="settings-template-actions">
         <button type="button" className="secondary" onClick={() => setBody(defaultEmailBodyTemplate)} disabled={loading}>

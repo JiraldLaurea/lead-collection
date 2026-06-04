@@ -25,24 +25,32 @@ export function LeadFiltersModal({ filters, categories, websiteFilterValue, phon
         Show filters
       </button>
       {open ? (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="lead-filters-title">
-          <div className="compose-modal filter-modal">
-            <div className="compose-modal-header">
-              <h2 id="lead-filters-title">Lead filters</h2>
-              <button type="button" className="icon-button" aria-label="Close filters modal" onClick={() => setOpen(false)}>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M18 6 6 18" />
-                  <path d="m6 6 12 12" />
-                </svg>
-              </button>
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="lead-filters-title"
+          onClick={() => setOpen(false)}
+        >
+          <div className="compose-modal filter-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="compose-modal-scroll">
+              <div className="compose-modal-header">
+                <h2 id="lead-filters-title">Lead filters</h2>
+                <button type="button" className="icon-button" aria-label="Close filters modal" onClick={() => setOpen(false)}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+              </div>
+              <LeadFiltersForm
+                filters={filters}
+                categories={categories}
+                websiteFilterValue={websiteFilterValue}
+                phoneFilterValue={phoneFilterValue}
+                variant="plain"
+              />
             </div>
-            <LeadFiltersForm
-              filters={filters}
-              categories={categories}
-              websiteFilterValue={websiteFilterValue}
-              phoneFilterValue={phoneFilterValue}
-              variant="plain"
-            />
           </div>
         </div>
       ) : null}

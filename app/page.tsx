@@ -20,12 +20,14 @@ export default async function DashboardPage() {
         <h2>Recent API Errors</h2>
         {metrics.recentErrors.length === 0 ? <p className="muted">No recent API errors.</p> : (
           <div className="table-frame dashboard-table-frame">
-          <table className="dashboard-table">
-            <thead><tr><th>Time</th><th>Code</th><th>Message</th></tr></thead>
-            <tbody>{metrics.recentErrors.map((error) => (
-              <tr key={error.id}><td>{error.createdAt.toLocaleString()}</td><td>{error.errorCode}</td><td>{error.errorMessage}</td></tr>
-            ))}</tbody>
-          </table>
+            <div className="table-scroll">
+              <table className="dashboard-table">
+                <thead><tr><th>Time</th><th>Code</th><th>Message</th></tr></thead>
+                <tbody>{metrics.recentErrors.map((error) => (
+                  <tr key={error.id}><td>{error.createdAt.toLocaleString()}</td><td>{error.errorCode}</td><td>{error.errorMessage}</td></tr>
+                ))}</tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

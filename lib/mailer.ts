@@ -5,6 +5,11 @@ type LeadEmailInput = {
   email: string;
   subjectTemplate?: string;
   bodyTemplate?: string;
+  attachments?: Array<{
+    filename: string;
+    content: Buffer;
+    contentType?: string;
+  }>;
 };
 
 function requiredEnv(name: string) {
@@ -65,6 +70,7 @@ export async function sendLeadEmail(lead: LeadEmailInput) {
     from: fromAddress,
     to: lead.email,
     subject,
-    text: body
+    text: body,
+    attachments: lead.attachments
   });
 }
