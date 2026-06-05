@@ -31,6 +31,7 @@ model Lead {
   lastRefreshedAt DateTime? @map("last_refreshed_at")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
+  emailLogs       EmailLog[]
 
   @@index([searchKeyword])
   @@index([searchLocation])
@@ -89,4 +90,23 @@ model AppSetting {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("app_settings")
+}
+
+model EmailLog {
+  id           Int      @id @default(autoincrement())
+  leadId       Int?     @map("lead_id")
+  businessName String   @map("business_name")
+  email        String
+  status       String
+  subject      String?
+  body         String?
+  errorMessage String?  @map("error_message")
+  sentAt       DateTime @default(now()) @map("sent_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  lead         Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([sentAt])
+  @@index([status])
+  @@map("email_logs")
 }

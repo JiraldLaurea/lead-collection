@@ -84,15 +84,38 @@ export async function POST(request: Request) {
   for (const lead of leads) {
     if (!lead.email) continue;
     try {
-      await sendLeadEmail({
+      const sentEmail = await sendLeadEmail({
         businessName: lead.businessName,
         email: lead.email,
         subjectTemplate: body.data.subject,
         bodyTemplate: body.data.body,
         attachments: emailRequest.attachments
       });
+      await prisma.emailLog.create({
+        data: {
+          leadId: lead.id,
+          businessName: lead.businessName,
+          email: lead.email,
+          status: "sent",
+          subject: sentEmail.subject,
+          body: sentEmail.body,
+          sentAt: new Date()
+        }
+      });
       results.push({ id: lead.id, email: lead.email, sent: true });
     } catch (error) {
+      await prisma.emailLog.create({
+        data: {
+          leadId: lead.id,
+          businessName: lead.businessName,
+          email: lead.email,
+          status: "failed",
+          subject: body.data.subject.replace(/\[business_name\]/gi, lead.businessName),
+          body: body.data.body.replace(/\[business_name\]/gi, lead.businessName),
+          errorMessage: error instanceof Error ? error.message : "Unable to send email",
+          sentAt: new Date()
+        }
+      });
       results.push({
         id: lead.id,
         email: lead.email,

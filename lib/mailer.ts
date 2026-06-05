@@ -32,6 +32,10 @@ function getTransporter() {
   });
 }
 
+export function smtpConfigured() {
+  return Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+}
+
 export function buildLeadEmailBody(businessName: string) {
   return [
     `Hello ${businessName},`,
@@ -73,4 +77,6 @@ export async function sendLeadEmail(lead: LeadEmailInput) {
     text: body,
     attachments: lead.attachments
   });
+
+  return { subject, body };
 }

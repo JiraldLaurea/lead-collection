@@ -138,6 +138,7 @@ export async function runPlacesSearch(input: PlacesSearchInput) {
     const places = await callPlaces(input);
     let saved = 0;
     let duplicates = 0;
+    const savedLeadIds: number[] = [];
     for (const place of places) {
       if (!place.id || !place.displayName?.text) continue;
       const existing = await prisma.lead.findUnique({ where: { placeId: place.id } });
@@ -145,7 +146,7 @@ export async function runPlacesSearch(input: PlacesSearchInput) {
         duplicates += 1;
         continue;
       }
-      await prisma.lead.create({
+      const lead = await prisma.lead.create({
         data: {
           placeId: place.id,
           businessName: place.displayName.text,
@@ -164,9 +165,10 @@ export async function runPlacesSearch(input: PlacesSearchInput) {
           lastRefreshedAt: new Date()
         }
       });
+      savedLeadIds.push(lead.id);
       saved += 1;
     }
-    return prisma.searchJob.update({
+    const updatedJob = await prisma.searchJob.update({
       where: { id: job.id },
       data: {
         status: "COMPLETED",
@@ -176,6 +178,7 @@ export async function runPlacesSearch(input: PlacesSearchInput) {
         finishedAt: new Date()
       }
     });
+    return { ...updatedJob, savedLeadIds };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Places API error";
     await prisma.apiErrorLog.create({
