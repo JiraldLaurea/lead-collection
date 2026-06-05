@@ -1,6 +1,8 @@
 import { DeleteLeadsButton } from "@/components/DeleteLeadsButton";
 import { EmailTemplateSettingsForm } from "@/components/EmailTemplateSettingsForm";
+import { OperationsSettingsForm } from "@/components/OperationsSettingsForm";
 import { getEmailBodyTemplate } from "@/lib/email-template";
+import { getOperationsSettings } from "@/lib/operations-settings";
 import { prisma } from "@/lib/prisma";
 import { requirePageAdmin } from "@/lib/require-auth";
 
@@ -13,11 +15,15 @@ export default async function SettingsPage() {
   await requirePageAdmin();
   const leadCount = await prisma.lead.count();
   const emailBodyTemplate = await getEmailBodyTemplate();
+  const operationsSettings = await getOperationsSettings();
   return (
     <section className="stack">
       <div className="page-title">
         <h1>Settings</h1>
         <p>Manage email defaults, saved lead data, and internal configuration.</p>
+      </div>
+      <div className="panel">
+        <OperationsSettingsForm settings={operationsSettings} />
       </div>
       <div className="panel">
         <EmailTemplateSettingsForm initialBody={emailBodyTemplate} />

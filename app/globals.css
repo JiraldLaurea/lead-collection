@@ -296,6 +296,133 @@ a {
   padding: 0;
 }
 
+.operations-settings-form {
+  display: grid;
+  gap: 14px;
+}
+
+.operations-settings-form h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.operations-settings-form p {
+  margin: 0;
+}
+
+.operations-settings-form > div:first-of-type p {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.automation-info {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f8fafc;
+  color: var(--muted);
+  padding: 14px;
+}
+
+.automation-info svg {
+  color: var(--primary);
+}
+
+.automation-info p {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.switch-field {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.switch-field input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 1px;
+  padding: 0;
+  opacity: 0;
+}
+
+.switch-track {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #cbd5e1;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.24);
+  transition: transform 0.2s ease;
+}
+
+.switch-field input:checked + .switch-track {
+  background: var(--primary);
+}
+
+.switch-field input:checked + .switch-track .switch-thumb {
+  transform: translateX(20px);
+}
+
+.switch-field strong {
+  font-weight: 500;
+}
+
+.operations-limit-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px);
+  gap: 14px;
+}
+
+.operations-limit-row input {
+  max-width: 320px;
+}
+
+.automation-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+
+.automation-status strong {
+  text-transform: capitalize;
+}
+
+.operations-settings-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .settings-section-title {
   margin: 0;
   border-bottom: 1px solid var(--border);
@@ -625,6 +752,17 @@ table {
   min-width: 1040px;
 }
 
+.email-log-table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 100%;
+}
+
+.email-log-table-frame {
+  max-height: 620px;
+  scrollbar-gutter: auto;
+}
+
 .leads-table th:nth-child(1),
 .leads-table td:nth-child(1) {
   width: 4%;
@@ -720,6 +858,36 @@ table {
 .logs-table th:nth-child(6),
 .logs-table td:nth-child(6) {
   width: 12%;
+}
+
+.email-log-table th:nth-child(1),
+.email-log-table td:nth-child(1) {
+  width: 21%;
+  padding-left: 22px;
+}
+
+.email-log-table th:nth-child(2),
+.email-log-table td:nth-child(2) {
+  width: 31%;
+}
+
+.email-log-table th:nth-child(3),
+.email-log-table td:nth-child(3) {
+  width: 36%;
+  overflow-wrap: anywhere;
+}
+
+.email-log-table th:nth-child(4),
+.email-log-table td:nth-child(4) {
+  width: 12%;
+}
+
+.email-log-table td {
+  font-size: 14px;
+}
+
+.email-log-table td strong {
+  font-weight: 500;
 }
 
 .phone-cell {
@@ -836,9 +1004,15 @@ table {
 }
 
 .leads-table th,
-.logs-table th {
+.logs-table th,
+.email-log-table th {
   background: #f8fafc;
   border-bottom: 0;
+  font-weight: 600;
+}
+
+.email-log-table th {
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -851,12 +1025,14 @@ table {
 }
 
 .logs-table th,
+.email-log-table th,
 .dashboard-table th {
   box-shadow: inset 0 -1px 0 var(--border);
 }
 
 .leads-table td,
-.logs-table td {
+.logs-table td,
+.email-log-table td {
   line-height: 1.35;
   vertical-align: middle;
 }
@@ -884,6 +1060,10 @@ table {
   background: #f8fafc;
 }
 
+.email-log-table tbody tr:hover {
+  background: #f8fafc;
+}
+
 .clickable-row {
   cursor: pointer;
 }
@@ -894,12 +1074,14 @@ table {
 }
 
 .leads-table tbody tr:last-child td,
-.logs-table tbody tr:last-child td {
+.logs-table tbody tr:last-child td,
+.email-log-table tbody tr:last-child td {
   border-bottom: 0;
 }
 
 .leads-table tbody tr:first-child td,
 .logs-table tbody tr:first-child td,
+.email-log-table tbody tr:first-child td,
 .dashboard-table tbody tr:first-child td {
   border-top: 0;
 }
@@ -989,6 +1171,50 @@ th {
   border-radius: 14px;
   background: var(--surface);
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+}
+
+.email-log-modal {
+  width: min(980px, calc(100vw - 32px));
+}
+
+.email-log-modal-body {
+  display: grid;
+  gap: 16px;
+}
+
+.email-log-detail-list {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.email-log-preview-block {
+  display: grid;
+  gap: 8px;
+}
+
+.email-log-preview-block h3 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.email-log-preview-block p,
+.email-log-preview-block pre {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 12px 14px;
+  color: var(--text);
+}
+
+.email-log-preview-block pre {
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: inherit;
+  line-height: 1.45;
 }
 
 .compose-modal-scroll {

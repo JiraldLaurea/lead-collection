@@ -36,6 +36,16 @@ const navGroups = [
         )
       },
       {
+        href: "/email-log",
+        label: "Email Log",
+        icon: (
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16v12H4Z" />
+            <path d="m4 7 8 6 8-6" />
+          </svg>
+        )
+      },
+      {
         href: "/settings",
         label: "Settings",
         icon: (
