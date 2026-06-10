@@ -9,9 +9,10 @@ type LeadFiltersModalProps = {
   categories: string[];
   websiteFilterValue: string;
   phoneFilterValue: string;
+  emailFilterValue: string;
 };
 
-export function LeadFiltersModal({ filters, categories, websiteFilterValue, phoneFilterValue }: LeadFiltersModalProps) {
+export function LeadFiltersModal({ filters, categories, websiteFilterValue, phoneFilterValue, emailFilterValue }: LeadFiltersModalProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -33,7 +34,7 @@ export function LeadFiltersModal({ filters, categories, websiteFilterValue, phon
           onClick={() => setOpen(false)}
         >
           <div className="compose-modal filter-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="compose-modal-scroll">
+            <form className="compose-modal-scroll">
               <div className="compose-modal-header">
                 <h2 id="lead-filters-title">Lead filters</h2>
                 <button type="button" className="icon-button" aria-label="Close filters modal" onClick={() => setOpen(false)}>
@@ -48,9 +49,21 @@ export function LeadFiltersModal({ filters, categories, websiteFilterValue, phon
                 categories={categories}
                 websiteFilterValue={websiteFilterValue}
                 phoneFilterValue={phoneFilterValue}
+                emailFilterValue={emailFilterValue}
                 variant="plain"
               />
-            </div>
+              <div className="compose-modal-actions">
+                <span />
+                <button type="submit">
+                  <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 5h16" />
+                    <path d="M7 12h10" />
+                    <path d="M10 19h4" />
+                  </svg>
+                  Apply filters
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}

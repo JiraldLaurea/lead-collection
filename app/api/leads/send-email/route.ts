@@ -1,6 +1,8 @@
 import { z } from "zod";
+import { getDebugSettings } from "@/lib/debug-settings";
 import { fail, ok } from "@/lib/http";
-import { sendLeadEmail } from "@/lib/mailer";
+import { getEmailTemplateDefaultAttachment } from "@/lib/email-template";
+import { buildLeadEmailContent, sendLeadEmail } from "@/lib/mailer";
 import { prisma } from "@/lib/prisma";
 import { requireApiAdmin } from "@/lib/require-auth";
 
@@ -65,6 +67,8 @@ export async function POST(request: Request) {
 
   const body = emailRequest.parsed;
   if (!body.success) return fail("E-EMAIL-01", "Invalid email request", 400, body.error.flatten());
+  const defaultAttachment = await getEmailTemplateDefaultAttachment();
+  const attachments = defaultAttachment ? [defaultAttachment, ...emailRequest.attachments] : emailRequest.attachments;
 
   const leads = await prisma.lead.findMany({
     where: {
@@ -80,16 +84,23 @@ export async function POST(request: Request) {
 
   if (leads.length === 0) return fail("E-EMAIL-02", "No selected leads have an email address", 400);
 
+  const debugSettings = await getDebugSettings();
   const results = [];
   for (const lead of leads) {
     if (!lead.email) continue;
     try {
-      const sentEmail = await sendLeadEmail({
+      const sentEmail = debugSettings.emailDryRunEnabled
+        ? buildLeadEmailContent({
+          businessName: lead.businessName,
+          subjectTemplate: body.data.subject,
+          bodyTemplate: body.data.body
+        })
+        : await sendLeadEmail({
         businessName: lead.businessName,
         email: lead.email,
         subjectTemplate: body.data.subject,
         bodyTemplate: body.data.body,
-        attachments: emailRequest.attachments
+        attachments
       });
       await prisma.emailLog.create({
         data: {

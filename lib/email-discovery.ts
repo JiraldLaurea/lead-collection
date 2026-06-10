@@ -9,14 +9,18 @@ function normalizeWebsiteUrl(value: string) {
 }
 
 function candidateUrls(websiteUrl: string) {
-  const base = new URL(normalizeWebsiteUrl(websiteUrl));
-  return [
-    base.toString(),
-    new URL("/contact", base).toString(),
-    new URL("/contact-us", base).toString(),
-    new URL("/about", base).toString(),
-    new URL("/about-us", base).toString()
-  ];
+  try {
+    const base = new URL(normalizeWebsiteUrl(websiteUrl));
+    return [
+      base.toString(),
+      new URL("/contact", base).toString(),
+      new URL("/contact-us", base).toString(),
+      new URL("/about", base).toString(),
+      new URL("/about-us", base).toString()
+    ];
+  } catch {
+    return [];
+  }
 }
 
 function cleanEmail(value: string) {
@@ -68,7 +72,16 @@ export async function discoverLeadEmail(leadId: number) {
     return { status: "NO_WEBSITE", email: null, source: null };
   }
 
-  for (const url of candidateUrls(lead.websiteUrl)) {
+  const urls = candidateUrls(lead.websiteUrl);
+  if (urls.length === 0) {
+    await prisma.lead.update({
+      where: { id: leadId },
+      data: { email: null, emailSource: null, emailStatus: "INVALID_WEBSITE", emailCheckedAt: new Date() }
+    });
+    return { status: "INVALID_WEBSITE", email: null, source: null };
+  }
+
+  for (const url of urls) {
     const html = await fetchPage(url);
     const [email] = extractEmails(html);
     if (email) {

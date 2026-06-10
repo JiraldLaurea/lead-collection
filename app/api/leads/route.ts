@@ -21,6 +21,12 @@ export async function GET(request: Request) {
 export async function DELETE() {
   const authError = await requireApiAdmin();
   if (authError) return authError;
-  const result = await prisma.lead.deleteMany();
-  return ok({ deleted: result.count });
+  const [emailLogsResult, leadResult] = await prisma.$transaction([
+    prisma.emailLog.deleteMany(),
+    prisma.lead.deleteMany(),
+  ]);
+  return ok({
+    deletedLeads: leadResult.count,
+    deletedEmailLogs: emailLogsResult.count,
+  });
 }

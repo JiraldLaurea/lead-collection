@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useId, useRef, useState } from "react";
 import { LoadingModal } from "@/components/LoadingModal";
+import { Snackbar } from "@/components/Snackbar";
 import { emailSubjectTemplate } from "@/lib/email-template-defaults";
 import { fetchWithTimeout, isAbortError } from "@/lib/fetch-timeout";
 
@@ -222,8 +223,18 @@ export function LeadDetailActions({ leadId, businessName, email, emailBodyTempla
           </div>
         </div>
       ) : null}
-      {notice ? <div className={`notice ${noticeType === "success" ? "notice-success" : "notice-error"} detail-action-notice`}>{notice}</div> : null}
-      <div className="detail-actions-left">
+      {notice ? <Snackbar message={notice} type={noticeType} onDismiss={() => setNotice("")} /> : null}
+      <div className="detail-actions-right">
+        <button className="danger delete-button" type="button" onClick={deleteLead} disabled={Boolean(loadingLabel)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 6h18" />
+            <path d="M8 6V4h8v2" />
+            <path d="M6 6l1 16h10l1-16" />
+            <path d="M10 11v6" />
+            <path d="M14 11v6" />
+          </svg>
+          Delete Lead
+        </button>
         {!hasEmail ? (
           <button className="secondary" type="button" onClick={findEmail} disabled={Boolean(loadingLabel)}>
             <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -241,18 +252,6 @@ export function LeadDetailActions({ leadId, businessName, email, emailBodyTempla
             Compose Email
           </button>
         )}
-      </div>
-      <div className="detail-actions-right">
-        <button className="danger delete-button" type="button" onClick={deleteLead} disabled={Boolean(loadingLabel)}>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 6h18" />
-            <path d="M8 6V4h8v2" />
-            <path d="M6 6l1 16h10l1-16" />
-            <path d="M10 11v6" />
-            <path d="M14 11v6" />
-          </svg>
-          Delete Lead
-        </button>
       </div>
     </div>
   );

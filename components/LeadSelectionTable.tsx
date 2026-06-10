@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Checkbox from "@mui/material/Checkbox";
 import { LeadFiltersModal } from "@/components/LeadFiltersModal";
 import { LoadingModal } from "@/components/LoadingModal";
+import { Snackbar } from "@/components/Snackbar";
+import { TableStatusRow } from "@/components/TableStatusRow";
 import { emailSubjectTemplate } from "@/lib/email-template-defaults";
 import { fetchWithTimeout, isAbortError } from "@/lib/fetch-timeout";
 import { emailStatusPillClassName, formatCategoryLabel, formatEmailStatus } from "@/lib/format";
@@ -28,14 +30,32 @@ type LeadSelectionTableProps = {
   categories: string[];
   websiteFilterValue: string;
   phoneFilterValue: string;
+  emailFilterValue: string;
   emailBodyTemplate: string;
+  totalCount: number;
+  currentPage: number;
+  pageSize: number;
+  totalPages: number;
 };
 
-export function LeadSelectionTable({ leads, filters, categories, websiteFilterValue, phoneFilterValue, emailBodyTemplate }: LeadSelectionTableProps) {
+export function LeadSelectionTable({
+  leads,
+  filters,
+  categories,
+  websiteFilterValue,
+  phoneFilterValue,
+  emailFilterValue,
+  emailBodyTemplate,
+  totalCount,
+  currentPage,
+  pageSize,
+  totalPages
+}: LeadSelectionTableProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
+  const [emailDiscoveryProgress, setEmailDiscoveryProgress] = useState({ searched: 0, total: 0 });
   const [sendingEmail, setSendingEmail] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailSubject, setEmailSubject] = useState(emailSubjectTemplate);
@@ -53,13 +73,13 @@ export function LeadSelectionTable({ leads, filters, categories, websiteFilterVa
   );
   const visibleLeadIds = useMemo(() => leads.map((lead) => lead.id), [leads]);
   const selectedEmails = selectedLeads.map((lead) => lead.email).filter((email): email is string => Boolean(email));
-  const selectedNeedsEmailDiscovery = selectedLeads.some((lead) => !lead.email);
+  const selectedNeedsEmailDiscovery = selectedLeads.some(isEmailDiscoveryPending);
   const allSelected = visibleLeadIds.length > 0 && visibleLeadIds.every((id) => selectedIds.includes(id));
   const someSelected = visibleLeadIds.some((id) => selectedIds.includes(id)) && !allSelected;
   const emailDisplay = (lead: LeadSelectionItem) => lead.email || formatEmailStatus(lead.emailStatus);
   const exportQuery = useMemo(() => {
     const params = new URLSearchParams();
-    ["keyword", "area", "category", "minRating", "hasWebsite", "hasPhone"].forEach((key) => {
+    ["keyword", "area", "category", "minRating", "hasWebsite", "hasPhone", "hasEmail"].forEach((key) => {
       const value = searchParams.get(key);
       if (value) params.set(key, value);
     });
@@ -83,6 +103,10 @@ export function LeadSelectionTable({ leads, filters, categories, websiteFilterVa
     };
   }, []);
 
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [currentPage, pageSize]);
+
   function toggleLead(id: number) {
     setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   }
@@ -97,23 +121,63 @@ export function LeadSelectionTable({ leads, filters, categories, websiteFilterVa
     });
   }
 
+  function goToPage(page: number) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(Math.min(Math.max(page, 1), totalPages)));
+    params.set("pageSize", String(pageSize));
+    router.push(`/leads?${params.toString()}`);
+  }
+
+  function changePageSize(nextPageSize: number) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", "1");
+    params.set("pageSize", String(nextPageSize));
+    router.push(`/leads?${params.toString()}`);
+  }
+
   async function discoverEmails() {
     if (selectedIds.length === 0) return;
+    const leadsToSearch = selectedLeads.filter(isEmailDiscoveryPending);
+    if (leadsToSearch.length === 0) return;
+
     setEmailNotice("");
     setEmailNoticeType("success");
+    setEmailDiscoveryProgress({ searched: 0, total: leadsToSearch.length });
     setLoading(true);
+    let found = 0;
+    let failed = 0;
     try {
-      await fetchWithTimeout("/api/leads/email-discovery", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadIds: selectedIds })
-      }, 30000);
+      for (const lead of leadsToSearch) {
+        try {
+          const response = await fetchWithTimeout(`/api/leads/${lead.id}/discover-email`, {
+            method: "POST"
+          }, 20000);
+          const payload = await response.json();
+          if (response.ok && payload.success && payload.data?.status === "FOUND") {
+            found += 1;
+          } else if (!response.ok) {
+            failed += 1;
+          }
+        } catch (error) {
+          failed += 1;
+          void error;
+        } finally {
+          setEmailDiscoveryProgress((current) => ({ ...current, searched: current.searched + 1 }));
+        }
+      }
       router.refresh();
+      setEmailNoticeType(failed > 0 ? "error" : "success");
+      setEmailNotice(
+        failed > 0
+          ? `Searched ${leadsToSearch.length} lead${leadsToSearch.length === 1 ? "" : "s"}. Found ${found} email${found === 1 ? "" : "s"}, ${failed} failed.`
+          : `Searched ${leadsToSearch.length} lead${leadsToSearch.length === 1 ? "" : "s"}. Found ${found} email${found === 1 ? "" : "s"}.`
+      );
     } catch (error) {
       setEmailNoticeType("error");
       setEmailNotice(isAbortError(error) ? "Finding emails timed out. Try fewer leads or try again later." : "Unable to find emails.");
     } finally {
       setLoading(false);
+      setEmailDiscoveryProgress({ searched: 0, total: 0 });
     }
   }
 
@@ -185,7 +249,12 @@ export function LeadSelectionTable({ leads, filters, categories, websiteFilterVa
 
   return (
     <div className="stack">
-      {loading ? <LoadingModal label="Finding emails" /> : null}
+      {loading ? (
+        <LoadingModal
+          label="Finding emails"
+          message={`${emailDiscoveryProgress.searched}/${emailDiscoveryProgress.total} leads searched`}
+        />
+      ) : null}
       {sendingEmail ? <LoadingModal label="Sending emails" /> : null}
       {showEmailModal ? (
         <div
@@ -299,10 +368,9 @@ export function LeadSelectionTable({ leads, filters, categories, websiteFilterVa
           </div>
         </div>
       ) : null}
-      {emailNotice ? <div className={`notice ${emailNoticeType === "success" ? "notice-success" : "notice-error"}`}>{emailNotice}</div> : null}
+      {emailNotice ? <Snackbar message={emailNotice} type={emailNoticeType} onDismiss={() => setEmailNotice("")} /> : null}
       <div className="bulk-actions">
         <div className="bulk-actions-left">
-          <span className="muted">{selectedIds.length} selected</span>
           <button type="button" className="secondary" disabled={!selectedNeedsEmailDiscovery || loading} onClick={discoverEmails}>
             <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="11" cy="11" r="7" />
@@ -328,14 +396,10 @@ export function LeadSelectionTable({ leads, filters, categories, websiteFilterVa
             categories={categories}
             websiteFilterValue={websiteFilterValue}
             phoneFilterValue={phoneFilterValue}
+            emailFilterValue={emailFilterValue}
           />
           <details className="download-menu" ref={downloadMenuRef}>
             <summary className="button secondary">
-              <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 3v12" />
-                <path d="m7 10 5 5 5-5" />
-                <path d="M5 20h14" />
-              </svg>
               Download
             </summary>
             <div className="download-menu-panel">
@@ -387,6 +451,7 @@ export function LeadSelectionTable({ leads, filters, categories, websiteFilterVa
                 <th>Website</th>
                 <th>Rating</th>
               </tr>
+              <TableStatusRow colSpan={8} itemCount={totalCount} selectedCount={selectedIds.length} itemLabel="lead" />
             </thead>
             <tbody>{leads.map((lead) => (
               <tr
@@ -440,6 +505,31 @@ export function LeadSelectionTable({ leads, filters, categories, websiteFilterVa
           </table>
         </div>
       </div>
+      <div className="table-pagination">
+        <span className="muted">
+          Page {currentPage} of {totalPages}
+        </span>
+        <div className="table-pagination-controls">
+          <label className="table-page-size">
+            Rows
+            <select value={pageSize} onChange={(event) => changePageSize(Number(event.target.value))}>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200</option>
+            </select>
+          </label>
+          <button type="button" className="secondary" disabled={currentPage <= 1} onClick={() => goToPage(currentPage - 1)}>
+            Previous
+          </button>
+          <button type="button" className="secondary" disabled={currentPage >= totalPages} onClick={() => goToPage(currentPage + 1)}>
+            Next
+          </button>
+        </div>
+      </div>
     </div>
   );
+}
+
+function isEmailDiscoveryPending(lead: LeadSelectionItem) {
+  return !lead.email && (!lead.emailStatus || lead.emailStatus === "NOT_CHECKED");
 }

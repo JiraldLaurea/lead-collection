@@ -15,12 +15,23 @@ export async function POST(request: Request) {
 
   const results = [];
   for (const leadId of parsed.data.leadIds) {
-    results.push({ leadId, ...(await discoverLeadEmail(leadId)) });
+    try {
+      results.push({ leadId, ...(await discoverLeadEmail(leadId)) });
+    } catch (error) {
+      results.push({
+        leadId,
+        status: "ERROR",
+        email: null,
+        source: null,
+        error: error instanceof Error ? error.message : "Unable to discover email"
+      });
+    }
   }
 
   return ok({
     totalChecked: results.length,
     totalFound: results.filter((result) => result.status === "FOUND").length,
+    totalFailed: results.filter((result) => result.status === "ERROR").length,
     results
   });
 }
