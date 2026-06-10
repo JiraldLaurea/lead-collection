@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS leads (
   opening_hours TEXT,
   search_keyword TEXT NOT NULL,
   search_location TEXT NOT NULL,
-  source TEXT NOT NULL DEFAULT 'google_places_api',
+  source TEXT NOT NULL DEFAULT 'serper_places_api',
   collected_at DATETIME NOT NULL,
   last_refreshed_at DATETIME,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

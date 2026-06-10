@@ -18,6 +18,6 @@ export async function GET() {
     privateAddresses,
     publicAccessBlocked: process.env.BLOCK_PUBLIC_ACCESS !== "false",
     trustProxy: process.env.TRUST_PROXY === "true",
-    googleApiKeyConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY && !process.env.GOOGLE_MAPS_API_KEY.startsWith("replace_"))
+    serperApiKeyConfigured: Boolean(process.env.SERPER_API_KEY && !process.env.SERPER_API_KEY.startsWith("replace_"))
   });
 }

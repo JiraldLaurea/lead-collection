@@ -1,6 +1,6 @@
-# Google Maps Lead Collection MVP - Office LAN Only
+# Serper Lead Collection MVP - Office LAN Only
 
-Internal local web app for collecting business leads through the official Google Places API. This is not a public SaaS and must run only on the approved office LAN.
+Internal local web app for collecting business leads through Serper. This is not a public SaaS and must run only on the approved office LAN.
 
 ## Installation
 
@@ -23,7 +23,7 @@ Set these values in `.env.local`:
 
 ```env
 OFFICE_ALLOWED_CIDRS=127.0.0.1/32,::1/128,192.168.0.0/24
-GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+SERPER_API_KEY=your_serper_api_key
 DATABASE_URL=file:../data/leads.sqlite
 SESSION_SECRET=replace_with_long_random_secret
 COOKIE_SECURE=false
@@ -93,8 +93,8 @@ http://<host-pc-private-ip>:3000
 - Do not deploy this app to Vercel, Netlify, Render, Railway, or any public host.
 - Do not use ngrok, Cloudflare Tunnel, Tailscale Funnel, localhost.run, or any public tunnel.
 - Do not configure router port forwarding.
-- Do not expose the Google API key in frontend code.
-- Do not scrape the Google Maps website UI. Use only the official Google Places API.
+- Do not expose the Serper API key in frontend code.
+- Do not scrape the Google Maps website UI. Lead collection should go through Serper from server route handlers.
 
 ## Windows Firewall Setup
 
@@ -137,17 +137,13 @@ sudo ufw deny 3000/tcp
 sudo ufw status verbose
 ```
 
-## Google API Safety
+## Serper API Safety
 
-The app calls Google Places API only from server route handlers. The raw key is read from `.env.local` and is not rendered into pages or API responses. Restrict the API key in Google Cloud Console where possible.
+The app calls Serper only from server route handlers. The raw key is read from `.env.local` and is not rendered into pages or API responses.
 
 References:
 
-- https://developers.google.com/maps/documentation/places/web-service/policies
-- https://developers.google.com/maps/documentation/places/web-service/place-id
-- https://docs.cloud.google.com/docs/authentication/api-keys
-- https://developers.google.com/maps/documentation/places/web-service/text-search
-- https://developers.google.com/maps/documentation/places/web-service/nearby-search
+- https://serper.dev/
 
 ## Manual Test Checklist
 
@@ -157,9 +153,9 @@ References:
 4. Another office LAN PC opens `http://<host-pc-private-ip>:3000`.
 5. A non-office IP receives 403 or cannot connect due to firewall.
 6. Blocked requests appear in Access Logs.
-7. Browser Sources and Network tabs do not reveal `GOOGLE_MAPS_API_KEY`.
+7. Browser Sources and Network tabs do not reveal `SERPER_API_KEY`.
 8. Text Search saves leads.
-9. Running the same search twice skips duplicate Place IDs.
+9. Running the same search twice skips duplicate leads.
 10. CSV and Excel downloads work.
 11. Existing lead data remains after app restart.
 12. Email template changes in Settings are used as the default compose body.

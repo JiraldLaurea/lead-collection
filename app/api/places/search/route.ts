@@ -12,7 +12,7 @@ const schema = z.object({
   radius: z.number().int().min(100).max(50000).optional(),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
-  maxResults: z.number().int().min(1).max(60)
+  maxResults: z.number().int().min(1).max(30)
 });
 
 export async function POST(request: Request) {
@@ -28,8 +28,8 @@ export async function POST(request: Request) {
     return ok(job);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Search failed";
-    if (message === "E-SEARCH-01") return fail("E-SEARCH-01", "Google API key is not configured", 500);
-    if (message === "E-SEARCH-03") return fail("E-SEARCH-03", "Max results must be between 1 and 60", 400);
-    return fail("E-SEARCH-02", "Google Places search failed. Please check the logs.", 502);
+    if (message === "E-SEARCH-01") return fail("E-SEARCH-01", "Serper API key is not configured", 500);
+    if (message === "E-SEARCH-03") return fail("E-SEARCH-03", "Max results must be between 1 and 30", 400);
+    return fail("E-SEARCH-02", "Serper lead search failed. Please check the logs.", 502);
   }
 }

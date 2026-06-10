@@ -3,33 +3,16 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { LoadingModal } from "@/components/LoadingModal";
-import { getCityCoordinates, philippinesLocations, provinces, type Province } from "@/lib/philippines-locations";
-
-const nearbyBusinessTypes = [
-  { value: "", label: "Any" },
-  { value: "restaurant", label: "Restaurant" },
-  { value: "doctor", label: "Clinic / Doctor" },
-  { value: "dentist", label: "Dental Clinic" },
-  { value: "veterinary_care", label: "Veterinary Clinic" },
-  { value: "pet_store", label: "Pet Store" },
-  { value: "beauty_salon", label: "Beauty Salon" },
-  { value: "spa", label: "Spa" },
-  { value: "gym", label: "Gym" },
-  { value: "store", label: "Retail Store" },
-  { value: "real_estate_agency", label: "Real Estate Agency" },
-  { value: "accounting", label: "Accounting Firm" },
-  { value: "lawyer", label: "Law Office" }
-];
+import { ModalHeaderText } from "@/components/ModalHeaderText";
+import { Snackbar } from "@/components/Snackbar";
+import { getCityCoordinates } from "@/lib/philippines-locations";
+import { fixedSearchCities, petClinicKeywords, skinClinicKeywords } from "@/lib/search-defaults";
 
 export function SearchForm() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [searchType, setSearchType] = useState<"TEXT_SEARCH" | "NEARBY_SEARCH">("TEXT_SEARCH");
-  const [province, setProvince] = useState<Province>("NCR");
-  const [cityArea, setCityArea] = useState("Makati");
-
-  const cities = philippinesLocations[province];
+  const [showSearchInfo, setShowSearchInfo] = useState(false);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -37,104 +20,77 @@ export function SearchForm() {
     setError("");
     const form = new FormData(event.currentTarget);
     const payload = Object.fromEntries(form.entries());
-    const coordinates = getCityCoordinates(cityArea);
-    const response = await fetch("/api/places/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...payload,
-        country: "Philippines",
-        cityArea,
-        latitude: coordinates?.latitude,
-        longitude: coordinates?.longitude,
-        maxResults: Number(payload.maxResults || 10),
-        radius: Number(payload.radius || 1000)
-      })
-    });
-    const data = await response.json();
-    if (!response.ok || !data.success) {
-      setError(data.error?.message || "Search failed. Please try again.");
-      setLoading(false);
-      return;
+    const maxResults = Math.min(Number(payload.maxResults || 30), 30);
+    const petMaxResults = Math.ceil(maxResults / 2);
+    const skinMaxResults = Math.floor(maxResults / 2);
+    const searches = [
+      { keyword: randomItem(petClinicKeywords), maxResults: petMaxResults },
+      { keyword: randomItem(skinClinicKeywords), maxResults: skinMaxResults }
+    ].filter((search) => search.maxResults > 0);
+
+    let searchCount = 0;
+    for (const search of searches) {
+      const cityArea = randomItem(fixedSearchCities);
+      const coordinates = getCityCoordinates(cityArea);
+      const response = await fetch("/api/places/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          country: "Philippines",
+          cityArea,
+          searchType: "TEXT_SEARCH",
+          keyword: search.keyword,
+          latitude: coordinates?.latitude,
+          longitude: coordinates?.longitude,
+          maxResults: search.maxResults,
+          radius: 1000
+        })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        setError(data.error?.message || "Search failed. Please try again.");
+        setLoading(false);
+        return;
+      }
+      searchCount += Number(data.data?.totalSaved ?? 0);
     }
     const params = new URLSearchParams({
       searchStatus: "success",
-      found: String(data.data.totalFound ?? 0),
-      saved: String(data.data.totalSaved ?? 0),
-      duplicates: String(data.data.totalDuplicates ?? 0)
+      searchCount: String(searchCount),
+      searchToastId: String(Date.now())
     });
     router.push(`/leads?${params.toString()}`);
     setLoading(false);
   }
 
   return (
-    <form className="panel stack" onSubmit={onSubmit}>
+    <form className="panel settings-panel search-collection-panel" onSubmit={onSubmit}>
       {loading ? <LoadingModal label="Collecting leads" /> : null}
-      <h2 className="panel-title">Search Collection</h2>
-      <div className="grid">
-        <label>
-          Province / Region
-          <select
-            name="province"
-            value={province}
-            onChange={(event) => {
-              const nextProvince = event.target.value as Province;
-              setProvince(nextProvince);
-              setCityArea(philippinesLocations[nextProvince][0]);
-            }}
+      {error ? <Snackbar message={error} type="error" onDismiss={() => setError("")} /> : null}
+      <div className="settings-panel-body">
+        <div className="search-collection-header">
+          <h2 className="panel-title">Search Collection</h2>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Show fixed search parameters"
+            onClick={() => setShowSearchInfo(true)}
           >
-            {provinces.map((item) => (
-              <option key={item} value={item}>{item}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          City
-          <select name="cityArea" value={cityArea} onChange={(event) => setCityArea(event.target.value)} required>
-            {cities.map((city) => (
-              <option key={city} value={city}>{city}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Search Type
-          <select
-            name="searchType"
-            value={searchType}
-            onChange={(event) => setSearchType(event.target.value as "TEXT_SEARCH" | "NEARBY_SEARCH")}
-          >
-            <option value="TEXT_SEARCH">Text Search</option>
-            <option value="NEARBY_SEARCH">Nearby Search</option>
-          </select>
-        </label>
-        {searchType === "TEXT_SEARCH" ? (
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 8h.01" />
+              <path d="M11 12h1v5h1" />
+            </svg>
+          </button>
+        </div>
+        <div className="grid fixed-search-grid">
           <label>
-            Keyword
-            <input name="keyword" defaultValue="accounting firm" required />
+            Max Results
+            <input name="maxResults" type="number" min="1" max="30" defaultValue="30" />
           </label>
-        ) : null}
-        {searchType === "NEARBY_SEARCH" ? (
-          <>
-            <label>
-              Business Type
-              <select name="includedType" defaultValue="">
-                {nearbyBusinessTypes.map((type) => (
-                  <option key={type.value} value={type.value}>{type.label}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Radius (m)
-              <input name="radius" type="number" min="100" max="50000" defaultValue="1000" required />
-            </label>
-          </>
-        ) : null}
-        <label>
-          Max Results
-          <input name="maxResults" type="number" min="1" max="60" defaultValue="10" />
-        </label>
+        </div>
       </div>
-      <div style={{ display: "flex", gap: 10 }}>
+      <div className="settings-panel-footer">
         <button type="submit" disabled={loading}>
           <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M21 21l-4.3-4.3" />
@@ -145,7 +101,47 @@ export function SearchForm() {
           {loading ? "Collecting..." : "Collect Leads"}
         </button>
       </div>
-      {error ? <p className="notice notice-error">{error}</p> : null}
+      {showSearchInfo ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setShowSearchInfo(false)}>
+          <div className="compose-modal search-info-modal" role="dialog" aria-modal="true" aria-labelledby="search-info-title" onClick={(event) => event.stopPropagation()}>
+            <div className="compose-modal-header">
+              <ModalHeaderText
+                id="search-info-title"
+                title="Fixed search parameters"
+                subtitle="Search Collection uses fixed defaults for faster lead gathering."
+              />
+              <button type="button" className="icon-button" aria-label="Close fixed search info" onClick={() => setShowSearchInfo(false)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 6 6 18" />
+                  <path d="m6 6 12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="search-info-modal-body">
+              <div className="fixed-search-info">
+                <span>Cities</span>
+                <p>Pasig, Mandaluyong, Makati, and Taguig.</p>
+              </div>
+              <div className="fixed-search-info">
+                <span>Keywords</span>
+                <p>Pet clinic, veterinary clinic, animal clinic, skin clinic, dermatology clinic, and aesthetic clinic.</p>
+              </div>
+              <div className="fixed-search-info">
+                <span>Search type</span>
+                <p>Text Search. Each collection run balances one pet clinic search and one skin clinic search across the fixed cities.</p>
+              </div>
+            </div>
+            <div className="compose-modal-actions">
+              <span />
+              <button type="button" onClick={() => setShowSearchInfo(false)}>OK</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </form>
   );
+}
+
+function randomItem<T>(items: readonly T[]) {
+  return items[Math.floor(Math.random() * items.length)];
 }

@@ -1,5 +1,5 @@
+import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { getCityCoordinates } from "@/lib/philippines-locations";
 
 type PlacesSearchInput = {
   country: string;
@@ -13,117 +13,134 @@ type PlacesSearchInput = {
   maxResults: number;
 };
 
-type GooglePlace = {
-  id?: string;
-  displayName?: { text?: string };
-  formattedAddress?: string;
-  nationalPhoneNumber?: string;
-  internationalPhoneNumber?: string;
-  websiteUri?: string;
-  googleMapsUri?: string;
-  rating?: number;
-  userRatingCount?: number;
-  businessStatus?: string;
-  regularOpeningHours?: unknown;
+type SerperPlace = {
+  cid?: string;
+  placeId?: string;
+  title?: string;
+  name?: string;
+  address?: string;
+  category?: string;
+  type?: string;
   types?: string[];
+  phoneNumber?: string;
+  phone?: string;
+  website?: string;
+  websiteUrl?: string;
+  link?: string;
+  googleUrl?: string;
+  rating?: number;
+  ratingCount?: number;
+  reviews?: number;
+  latitude?: number;
+  longitude?: number;
 };
 
-const excludedLeadTypes = new Set([
-  "amusement_park",
+type SerperPlacesResponse = {
+  places?: SerperPlace[];
+  error?: string | { message?: string };
+  message?: string;
+};
+
+const excludedLeadCategories = [
+  "amusement park",
   "aquarium",
-  "art_gallery",
+  "art gallery",
   "campground",
   "cemetery",
   "church",
-  "city_hall",
+  "city hall",
   "courthouse",
   "embassy",
-  "hindu_temple",
+  "government",
   "library",
-  "local_government_office",
   "mosque",
   "museum",
   "park",
   "parking",
   "playground",
   "police",
-  "post_office",
-  "rv_park",
+  "post office",
   "school",
-  "secondary_school",
   "stadium",
   "synagogue",
-  "tourist_attraction",
+  "tourist attraction",
   "university",
   "zoo"
-]);
+];
 
-function isLeadTarget(place: GooglePlace) {
-  const types = place.types || [];
-  return !types.some((type) => excludedLeadTypes.has(type));
+function isLeadTarget(place: SerperPlace) {
+  const categories = [place.category, place.type, ...(place.types || [])]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return !excludedLeadCategories.some((excluded) => categories.includes(excluded));
 }
 
 function apiKey() {
-  const key = process.env.GOOGLE_MAPS_API_KEY;
-  if (!key || key === "replace_with_server_side_api_key") {
+  const key = process.env.SERPER_API_KEY;
+  if (!key || key === "replace_with_serper_api_key") {
     throw new Error("E-SEARCH-01");
   }
   return key;
 }
 
-function fieldMask() {
-  return process.env.GOOGLE_PLACES_FIELD_MASK || "places.id,places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.websiteUri,places.googleMapsUri,places.rating,places.userRatingCount,places.businessStatus,places.types";
+async function callSerperPlaces(input: PlacesSearchInput): Promise<SerperPlace[]> {
+  const query = `${input.keyword || ""} in ${input.cityArea}, ${input.country}`.trim();
+  const places: SerperPlace[] = [];
+  const seen = new Set<string>();
+  const maxPages = getSerperMaxPages();
+  const candidateLimit = input.maxResults * maxPages;
+
+  for (let page = 1; page <= maxPages && places.length < candidateLimit; page += 1) {
+    const pagePlaces = await fetchSerperPlacesPage(input, query, page);
+    let newPlaces = 0;
+
+    for (const place of pagePlaces) {
+      const dedupeKey = getSerperPlaceDedupeKey(place);
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      places.push(place);
+      newPlaces += 1;
+      if (places.length >= candidateLimit) break;
+    }
+
+    if (pagePlaces.length === 0 || newPlaces === 0) break;
+  }
+
+  return places.filter(isLeadTarget);
 }
 
-async function callPlaces(input: PlacesSearchInput): Promise<GooglePlace[]> {
-  const coordinates = getCityCoordinates(input.cityArea);
-  const headers = {
-    "Content-Type": "application/json",
-    "X-Goog-Api-Key": apiKey(),
-    "X-Goog-FieldMask": fieldMask()
-  };
-
-  const textQuery = `${input.keyword || ""} in ${input.cityArea}, ${input.country}`.trim();
-  const url =
-    input.searchType === "TEXT_SEARCH"
-      ? "https://places.googleapis.com/v1/places:searchText"
-      : "https://places.googleapis.com/v1/places:searchNearby";
-  const body =
-    input.searchType === "TEXT_SEARCH"
-      ? { textQuery, maxResultCount: input.maxResults }
-      : {
-        maxResultCount: input.maxResults,
-          includedTypes: input.includedType ? [input.includedType] : undefined,
-          locationRestriction: {
-            circle: {
-              center: {
-                latitude: input.latitude ?? coordinates?.latitude ?? 14.5995,
-                longitude: input.longitude ?? coordinates?.longitude ?? 120.9842
-              },
-              radius: input.radius ?? 1000
-            }
-          }
-        };
-
-  const response = await fetch(url, {
+async function fetchSerperPlacesPage(input: PlacesSearchInput, query: string, page: number) {
+  const response = await fetch("https://google.serper.dev/places", {
     method: "POST",
-    headers,
-    body: JSON.stringify(body)
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-KEY": apiKey()
+    },
+    body: JSON.stringify({
+      q: query,
+      location: `${input.cityArea}, ${input.country}`,
+      gl: "ph",
+      hl: "en",
+      num: input.maxResults,
+      page
+    })
   });
-  const json = (await response.json()) as { places?: GooglePlace[]; error?: { message?: string; code?: number } };
+
+  const json = (await response.json()) as SerperPlacesResponse;
   if (!response.ok) {
-    throw new Error(json.error?.message || "Google Places API request failed");
+    throw new Error(getSerperErrorMessage(json) || "Serper Places request failed");
   }
-  return (json.places || []).filter(isLeadTarget).slice(0, input.maxResults);
+  return json.places || [];
 }
 
 export async function runPlacesSearch(input: PlacesSearchInput) {
-  if (input.maxResults < 1 || input.maxResults > 60) {
+  if (input.maxResults < 1 || input.maxResults > 30) {
     throw new Error("E-SEARCH-03");
   }
 
   const location = `${input.cityArea}, ${input.country}`;
-  const searchKeyword = input.keyword || "nearby_search";
+  const searchKeyword = input.keyword || "places_search";
   const job = await prisma.searchJob.create({
     data: {
       searchKeyword,
@@ -135,32 +152,38 @@ export async function runPlacesSearch(input: PlacesSearchInput) {
   });
 
   try {
-    const places = await callPlaces(input);
+    const places = await callSerperPlaces(input);
     let saved = 0;
     let duplicates = 0;
     const savedLeadIds: number[] = [];
     for (const place of places) {
-      if (!place.id || !place.displayName?.text) continue;
-      const existing = await prisma.lead.findUnique({ where: { placeId: place.id } });
+      if (saved >= input.maxResults) break;
+      const businessName = place.title || place.name;
+      if (!businessName) continue;
+
+      const placeId = getPlaceId(place, businessName, location);
+      const existing = await prisma.lead.findUnique({ where: { placeId } });
       if (existing) {
         duplicates += 1;
         continue;
       }
+
       const lead = await prisma.lead.create({
         data: {
-          placeId: place.id,
-          businessName: place.displayName.text,
-          category: place.types?.[0],
-          formattedAddress: place.formattedAddress,
-          phoneNumber: place.nationalPhoneNumber || place.internationalPhoneNumber,
-          websiteUrl: place.websiteUri,
-          googleMapsUrl: place.googleMapsUri,
+          placeId,
+          businessName,
+          category: place.category || place.type || place.types?.[0],
+          formattedAddress: place.address,
+          phoneNumber: place.phoneNumber || place.phone,
+          websiteUrl: place.website || place.websiteUrl,
+          googleMapsUrl: getGoogleMapsUrl(place, businessName, location),
           rating: place.rating,
-          reviewCount: place.userRatingCount,
-          businessStatus: place.businessStatus,
-          openingHours: place.regularOpeningHours ? JSON.stringify(place.regularOpeningHours) : undefined,
+          reviewCount: place.ratingCount ?? place.reviews,
+          businessStatus: undefined,
+          openingHours: undefined,
           searchKeyword,
           searchLocation: location,
+          source: "serper_places_api",
           collectedAt: new Date(),
           lastRefreshedAt: new Date()
         }
@@ -180,11 +203,11 @@ export async function runPlacesSearch(input: PlacesSearchInput) {
     });
     return { ...updatedJob, savedLeadIds };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown Places API error";
+    const message = error instanceof Error ? error.message : "Unknown Serper Places error";
     await prisma.apiErrorLog.create({
       data: {
-        provider: "google_places_api",
-        endpoint: input.searchType,
+        provider: "serper_places_api",
+        endpoint: "places",
         errorCode: message.startsWith("E-") ? message : "E-SEARCH-02",
         errorMessage: message,
         requestContext: JSON.stringify({ keyword: searchKeyword, location })
@@ -196,4 +219,54 @@ export async function runPlacesSearch(input: PlacesSearchInput) {
     });
     throw error;
   }
+}
+
+function getSerperErrorMessage(json: SerperPlacesResponse) {
+  if (!json.error) return json.message;
+  return typeof json.error === "string" ? json.error : json.error.message;
+}
+
+function getSerperMaxPages() {
+  const parsed = Number(process.env.SERPER_PLACES_MAX_PAGES || 10);
+  if (!Number.isFinite(parsed)) return 10;
+  return Math.min(Math.max(Math.floor(parsed), 1), 10);
+}
+
+function getPlaceId(place: SerperPlace, businessName: string, location: string) {
+  const nativeId = place.placeId || place.cid;
+  if (nativeId) return `serper:${nativeId}`;
+
+  const stableText = [
+    businessName,
+    place.address,
+    place.phoneNumber || place.phone,
+    place.website || place.websiteUrl,
+    location
+  ]
+    .filter(Boolean)
+    .join("|")
+    .toLowerCase();
+  return `serper:${createHash("sha1").update(stableText).digest("hex")}`;
+}
+
+function getSerperPlaceDedupeKey(place: SerperPlace) {
+  if (place.placeId) return `place:${place.placeId}`;
+  if (place.cid) return `cid:${place.cid}`;
+  return [
+    place.title || place.name,
+    place.address,
+    place.phoneNumber || place.phone,
+    place.website || place.websiteUrl
+  ]
+    .filter(Boolean)
+    .join("|")
+    .toLowerCase();
+}
+
+function getGoogleMapsUrl(place: SerperPlace, businessName: string, location: string) {
+  if (place.googleUrl) return place.googleUrl;
+  if (place.link) return place.link;
+  if (place.cid) return `https://www.google.com/maps?cid=${encodeURIComponent(place.cid)}`;
+  const query = encodeURIComponent(`${businessName} ${place.address || location}`);
+  return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }

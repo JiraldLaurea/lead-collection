@@ -26,7 +26,7 @@ model Lead {
   openingHours    String?  @map("opening_hours")
   searchKeyword   String   @map("search_keyword")
   searchLocation  String   @map("search_location")
-  source          String   @default("google_places_api")
+  source          String   @default("serper_places_api")
   collectedAt     DateTime @map("collected_at")
   lastRefreshedAt DateTime? @map("last_refreshed_at")
   createdAt       DateTime @default(now()) @map("created_at")
