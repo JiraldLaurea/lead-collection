@@ -1,34 +1,15 @@
 import { emailSubjectTemplate } from "@/lib/email-template-defaults";
-import { getEmailBodyTemplate } from "@/lib/email-template";
+import { getDebugSettings } from "@/lib/debug-settings";
+import { getEmailBodyTemplate, getEmailTemplateDefaultAttachment } from "@/lib/email-template";
 import { discoverLeadEmail } from "@/lib/email-discovery";
-import { sendLeadEmail, smtpConfigured } from "@/lib/mailer";
-import { getOperationsSettings } from "@/lib/operations-settings";
-import { philippinesLocations, provinces } from "@/lib/philippines-locations";
+import { buildLeadEmailContent, sendLeadEmail, smtpConfigured } from "@/lib/mailer";
+import { getOperationsSettings, isWithinAutoEmailSchedule } from "@/lib/operations-settings";
 import { runPlacesSearch } from "@/lib/places";
 import { prisma } from "@/lib/prisma";
+import { fixedSearchCities, petClinicKeywords, skinClinicKeywords } from "@/lib/search-defaults";
 
-const businessKeywords = [
-  "restaurant",
-  "cafe",
-  "hotel",
-  "resort",
-  "dental clinic",
-  "medical clinic",
-  "law office",
-  "accounting firm",
-  "real estate agency",
-  "construction company",
-  "printing services",
-  "auto repair shop",
-  "beauty salon",
-  "spa",
-  "fitness gym",
-  "event venue",
-  "travel agency",
-  "hardware store",
-  "retail store",
-  "marketing agency"
-];
+const testAutomationEmail = "jiraldcalusay@gmail.com";
+const minimumTestAutomationDurationMs = 5000;
 
 type AutomationPhase = "idle" | "searching" | "discovering" | "sending" | "done" | "blocked" | "disabled" | "error";
 
@@ -50,6 +31,7 @@ export type AutomationStatus = {
 type AutomationState = {
   status: AutomationStatus;
   promise: Promise<void> | null;
+  promiseMode: "auto" | "test" | null;
 };
 
 const initialStatus: AutomationStatus = {
@@ -73,7 +55,7 @@ const globalForAutomation = globalThis as typeof globalThis & {
 
 function getState() {
   if (!globalForAutomation.leadCollectionAutomationState) {
-    globalForAutomation.leadCollectionAutomationState = { status: initialStatus, promise: null };
+    globalForAutomation.leadCollectionAutomationState = { status: initialStatus, promise: null, promiseMode: null };
   }
   return globalForAutomation.leadCollectionAutomationState;
 }
@@ -100,24 +82,59 @@ export async function ensureAutomationRunning(reason = "settings") {
     updateStatus({ running: false, phase: "disabled", message: "Automatic email sending is disabled.", sentToday, target: settings.autoEmailDailyLimit });
     return state.status;
   }
+  if (!isWithinAutoEmailSchedule(settings)) {
+    updateStatus({
+      running: false,
+      phase: "blocked",
+      message: `Automatic email sending is scheduled from ${settings.autoEmailScheduleStart} to ${settings.autoEmailScheduleEnd}.`,
+      sentToday,
+      target: settings.autoEmailDailyLimit
+    });
+    return state.status;
+  }
   if (sentToday >= settings.autoEmailDailyLimit) {
-    updateStatus({ running: false, phase: "done", message: "Daily email sending limit reached.", sentToday, target: settings.autoEmailDailyLimit });
+    updateStatus({ running: false, phase: "done", message: getDailyLimitReachedMessage(settings.autoEmailScheduleEnabled), sentToday, target: settings.autoEmailDailyLimit });
     return state.status;
   }
 
+  updateStatus({
+    running: true,
+    phase: "searching",
+    message: `Automation started from ${reason}.`,
+    startedAt: new Date().toISOString(),
+    iteration: 0,
+    sentToday,
+    target: settings.autoEmailDailyLimit,
+    searchesRun: 0,
+    emailsFound: 0,
+    emailsSent: 0,
+    emailFailed: 0
+  });
+  state.promiseMode = "auto";
   state.promise = runAutomationLoop(reason, false).finally(() => {
-    state.promise = null;
+    if (state.promiseMode === "auto") {
+      state.promise = null;
+      state.promiseMode = null;
+    }
   });
   return state.status;
 }
 
 export async function ensureTestAutomationRunning() {
   const state = getState();
-  if (state.promise) return state.status;
+  if (state.promise) {
+    if (state.promiseMode === "test") {
+      await state.promise;
+    }
+    return state.status;
+  }
 
-  state.promise = runAutomationLoop("test automatic email sending", true).finally(() => {
+  state.promiseMode = "test";
+  state.promise = runTestAutomationLoop().finally(() => {
     state.promise = null;
+    state.promiseMode = null;
   });
+  await state.promise;
   return state.status;
 }
 
@@ -149,7 +166,8 @@ async function runAutomationLoop(reason: string, testRun: boolean) {
     emailFailed: 0
   });
 
-  if (!smtpConfigured()) {
+  const debugSettings = await getDebugSettings();
+  if (!debugSettings.emailDryRunEnabled && !smtpConfigured()) {
     updateStatus({
       running: false,
       phase: "blocked",
@@ -161,19 +179,30 @@ async function runAutomationLoop(reason: string, testRun: boolean) {
   let noProgressCycles = 0;
   const maxCycles = testRun ? 1 : 80;
   for (let iteration = 1; iteration <= maxCycles; iteration += 1) {
-    const settings = await getOperationsSettings();
+      const settings = await getOperationsSettings();
+    const debugSettings = await getDebugSettings();
     const limit = testRun ? 1 : settings.autoEmailDailyLimit;
     let sentToday = await countEmailsSentToday();
     if (!testRun && !settings.autoEmailEnabled) {
       updateStatus({ running: false, phase: "disabled", message: "Automation stopped because automatic email sending is disabled.", sentToday, target: limit });
       return;
     }
+    if (!testRun && !isWithinAutoEmailSchedule(settings)) {
+      updateStatus({
+        running: false,
+        phase: "done",
+        message: `Scheduled email sending window ended (${settings.autoEmailScheduleStart} to ${settings.autoEmailScheduleEnd}).`,
+        sentToday,
+        target: limit
+      });
+      return;
+    }
     if (sentToday >= limit) {
-      updateStatus({ running: false, phase: "done", message: "Daily email sending limit reached.", sentToday, target: limit });
+      updateStatus({ running: false, phase: "done", message: getDailyLimitReachedMessage(settings.autoEmailScheduleEnabled), sentToday, target: limit });
       return;
     }
 
-    const searchInput = randomSearchInput();
+    const searchInput = searchInputForIteration(iteration);
     updateStatus({
       phase: "searching",
       message: `Cycle ${iteration}: searching ${searchInput.keyword} in ${searchInput.cityArea}.`,
@@ -191,7 +220,7 @@ async function runAutomationLoop(reason: string, testRun: boolean) {
       updateStatus({
         running: false,
         phase: "error",
-        message: error instanceof Error ? error.message : "Google Places search failed."
+        message: error instanceof Error ? error.message : "Serper lead search failed."
       });
       return;
     }
@@ -205,6 +234,8 @@ async function runAutomationLoop(reason: string, testRun: boolean) {
     let emailsFoundThisCycle = 0;
     let sentThisCycle = 0;
     const bodyTemplate = await getEmailBodyTemplate();
+    const defaultAttachment = await getEmailTemplateDefaultAttachment();
+    const attachments = defaultAttachment ? [defaultAttachment] : [];
     for (const candidate of candidates) {
       sentToday = await countEmailsSentToday();
       if (sentToday >= limit) break;
@@ -223,11 +254,18 @@ async function runAutomationLoop(reason: string, testRun: boolean) {
       if (!refreshed || !email) continue;
 
       try {
-        const sent = await sendLeadEmail({
+        const emailContent = debugSettings.emailDryRunEnabled
+          ? buildLeadEmailContent({
+            businessName: refreshed.businessName,
+            subjectTemplate: emailSubjectTemplate,
+            bodyTemplate
+          })
+          : await sendLeadEmail({
           businessName: refreshed.businessName,
           email,
           subjectTemplate: emailSubjectTemplate,
-          bodyTemplate
+          bodyTemplate,
+          attachments
         });
         await prisma.emailLog.create({
           data: {
@@ -235,8 +273,8 @@ async function runAutomationLoop(reason: string, testRun: boolean) {
             businessName: refreshed.businessName,
             email,
             status: "sent",
-            subject: sent.subject,
-            body: sent.body,
+            subject: emailContent.subject,
+            body: emailContent.body,
             sentAt: new Date()
           }
         });
@@ -293,16 +331,145 @@ async function runAutomationLoop(reason: string, testRun: boolean) {
   });
 }
 
-function randomSearchInput() {
-  const province = randomItem(provinces);
-  const cityArea = randomItem(philippinesLocations[province]);
-  const keyword = randomItem(businessKeywords);
+async function runTestAutomationLoop() {
+  const startedAt = new Date().toISOString();
+  const startedAtDate = new Date(startedAt);
+  updateStatus({
+    running: true,
+    phase: "sending",
+    message: "Test automation: sending email to the sample lead.",
+    startedAt,
+    iteration: 1,
+    sentToday: await countEmailsSentToday(),
+    target: 1,
+    searchesRun: 0,
+    emailsFound: 1,
+    emailsSent: 0,
+    emailFailed: 0
+  });
+
+  const debugSettings = await getDebugSettings();
+  if (!debugSettings.emailDryRunEnabled && !smtpConfigured()) {
+    updateStatus({
+      running: false,
+      phase: "blocked",
+      message: "SMTP is not configured, so the test email could not be sent.",
+      target: 1
+    });
+    return;
+  }
+
+  const lead = await createSampleEmailLead();
+  const bodyTemplate = await getEmailBodyTemplate();
+  const defaultAttachment = await getEmailTemplateDefaultAttachment();
+  try {
+    const emailContent = debugSettings.emailDryRunEnabled
+      ? buildLeadEmailContent({
+        businessName: lead.businessName,
+        subjectTemplate: emailSubjectTemplate,
+        bodyTemplate
+      })
+      : await sendLeadEmail({
+      businessName: lead.businessName,
+      email: testAutomationEmail,
+      subjectTemplate: emailSubjectTemplate,
+      bodyTemplate,
+      attachments: defaultAttachment ? [defaultAttachment] : []
+    });
+    await prisma.emailLog.create({
+      data: {
+        leadId: lead.id,
+        businessName: lead.businessName,
+        email: testAutomationEmail,
+        status: "sent",
+        subject: emailContent.subject,
+        body: emailContent.body,
+        sentAt: new Date()
+      }
+    });
+    await waitForMinimumDuration(startedAtDate, minimumTestAutomationDurationMs);
+    updateStatus({
+      running: false,
+      phase: "done",
+      message: "Test automatic email sending completed.",
+      sentToday: await countEmailsSentToday(),
+      target: 1,
+      emailsSent: 1
+    });
+  } catch (error) {
+    await prisma.emailLog.create({
+      data: {
+        leadId: lead.id,
+        businessName: lead.businessName,
+        email: testAutomationEmail,
+        status: "failed",
+        subject: emailSubjectTemplate.replace(/\[business_name\]/gi, lead.businessName),
+        body: bodyTemplate.replace(/\[business_name\]/gi, lead.businessName),
+        errorMessage: error instanceof Error ? error.message : "Unable to send email",
+        sentAt: new Date()
+      }
+    });
+    await waitForMinimumDuration(startedAtDate, minimumTestAutomationDurationMs);
+    updateStatus({
+      running: false,
+      phase: "error",
+      message: `Test automatic email failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      sentToday: await countEmailsSentToday(),
+      target: 1,
+      emailFailed: 1
+    });
+  }
+}
+
+async function waitForMinimumDuration(startedAt: Date, minimumDurationMs: number) {
+  const elapsedMs = Date.now() - startedAt.getTime();
+  const remainingMs = minimumDurationMs - elapsedMs;
+  if (remainingMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, remainingMs));
+  }
+}
+
+async function createSampleEmailLead() {
+  const now = new Date();
+  return prisma.lead.upsert({
+    where: { placeId: "test-automatic-email-sample-lead" },
+    create: {
+      placeId: "test-automatic-email-sample-lead",
+      businessName: "Test Business Lead",
+      category: "sample_lead",
+      formattedAddress: "Makati, Metro Manila, Philippines",
+      email: testAutomationEmail,
+      emailSource: "test_automation",
+      emailStatus: "FOUND",
+      emailCheckedAt: now,
+      websiteUrl: "https://example.com/test-business-lead",
+      searchKeyword: "test automatic email",
+      searchLocation: "Makati, Philippines",
+      source: "test_automation",
+      collectedAt: now,
+      lastRefreshedAt: now
+    },
+    update: {
+      businessName: "Test Business Lead",
+      email: testAutomationEmail,
+      emailSource: "test_automation",
+      emailStatus: "FOUND",
+      emailCheckedAt: now,
+      lastRefreshedAt: now
+    }
+  });
+}
+
+function searchInputForIteration(iteration: number) {
+  const cityArea = randomItem(fixedSearchCities);
+  const keywordGroup = iteration % 2 === 1 ? petClinicKeywords : skinClinicKeywords;
+  const keyword = randomItem(keywordGroup);
   return {
     country: "Philippines",
     cityArea,
     keyword,
     searchType: "TEXT_SEARCH" as const,
-    maxResults: 10
+    maxResults: 30
   };
 }
 
@@ -343,4 +510,10 @@ async function countEmailsSentToday() {
       sentAt: { gte: today }
     }
   });
+}
+
+function getDailyLimitReachedMessage(scheduleEnabled: boolean) {
+  return scheduleEnabled
+    ? "Daily automated email sending limit reached. Automation is paused until the next scheduled window."
+    : "Daily email sending limit reached.";
 }

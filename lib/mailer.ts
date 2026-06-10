@@ -58,17 +58,23 @@ function applyLeadTemplate(template: string, businessName: string) {
   return template.replace(/\[business_name\]/gi, businessName);
 }
 
-export async function sendLeadEmail(lead: LeadEmailInput) {
-  const transporter = getTransporter();
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-  const fromName = process.env.SMTP_FROM_NAME;
-  const fromAddress = fromName && from ? `"${fromName}" <${from}>` : from;
+export function buildLeadEmailContent(lead: Pick<LeadEmailInput, "businessName" | "subjectTemplate" | "bodyTemplate">) {
   const subject = lead.subjectTemplate
     ? applyLeadTemplate(lead.subjectTemplate, lead.businessName)
     : buildLeadEmailSubject(lead.businessName);
   const body = lead.bodyTemplate
     ? applyLeadTemplate(lead.bodyTemplate, lead.businessName)
     : buildLeadEmailBody(lead.businessName);
+
+  return { subject, body };
+}
+
+export async function sendLeadEmail(lead: LeadEmailInput) {
+  const transporter = getTransporter();
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const fromName = process.env.SMTP_FROM_NAME;
+  const fromAddress = fromName && from ? `"${fromName}" <${from}>` : from;
+  const { subject, body } = buildLeadEmailContent(lead);
 
   await transporter.sendMail({
     from: fromAddress,
