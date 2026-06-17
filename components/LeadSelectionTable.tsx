@@ -74,6 +74,7 @@ export function LeadSelectionTable({
   const visibleLeadIds = useMemo(() => leads.map((lead) => lead.id), [leads]);
   const selectedEmails = selectedLeads.map((lead) => lead.email).filter((email): email is string => Boolean(email));
   const selectedNeedsEmailDiscovery = selectedLeads.some(isEmailDiscoveryPending);
+  const selectedCanExportPhones = selectedLeads.some((lead) => hasExportablePhoneNumber(lead.phoneNumber));
   const allSelected = visibleLeadIds.length > 0 && visibleLeadIds.every((id) => selectedIds.includes(id));
   const someSelected = visibleLeadIds.some((id) => selectedIds.includes(id)) && !allSelected;
   const emailDisplay = (lead: LeadSelectionItem) => lead.email || formatEmailStatus(lead.emailStatus);
@@ -86,6 +87,10 @@ export function LeadSelectionTable({
     const query = params.toString();
     return query ? `?${query}` : "";
   }, [searchParams]);
+  const phoneExportQuery = useMemo(() => {
+    if (selectedIds.length === 0) return "";
+    return `?ids=${selectedIds.join(",")}`;
+  }, [selectedIds]);
   const valueOrNA = (value?: string | number | null) => value ?? "N/A";
 
   useEffect(() => {
@@ -405,6 +410,11 @@ export function LeadSelectionTable({
             <div className="download-menu-panel">
               <a href={`/api/export/csv${exportQuery}`}>CSV</a>
               <a href={`/api/export/xlsx${exportQuery}`}>XLSX</a>
+              {selectedCanExportPhones ? (
+                <a href={`/api/export/phones/csv${phoneExportQuery}`}>Phone CSV</a>
+              ) : (
+                <span className="download-menu-disabled">Phone CSV</span>
+              )}
             </div>
           </details>
         </div>
@@ -532,4 +542,10 @@ export function LeadSelectionTable({
 
 function isEmailDiscoveryPending(lead: LeadSelectionItem) {
   return !lead.email && (!lead.emailStatus || lead.emailStatus === "NOT_CHECKED");
+}
+
+function hasExportablePhoneNumber(value?: string | null) {
+  if (!value) return false;
+  const digits = value.replace(/\D/g, "");
+  return /^09\d{9}$/.test(digits) || /^9\d{9}$/.test(digits) || /^639\d{9}$/.test(digits);
 }

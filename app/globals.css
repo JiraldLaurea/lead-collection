@@ -1146,6 +1146,15 @@ table {
   background: #eef4ff;
 }
 
+.download-menu-disabled {
+  display: block;
+  padding: 10px 14px;
+  color: var(--muted);
+  cursor: not-allowed;
+  font-size: 14px;
+  opacity: 0.6;
+}
+
 .leads-table {
   table-layout: fixed;
   min-width: 1600px;
