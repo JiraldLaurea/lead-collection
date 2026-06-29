@@ -87,7 +87,7 @@ function formatLeadForExport(lead: ExportLead) {
   };
 }
 
-function normalizePhilippineMobileNumber(value?: string | null) {
+export function normalizePhilippineMobileNumber(value?: string | null) {
   if (!value) return null;
   const digits = value.replace(/\D/g, "");
   if (/^09\d{9}$/.test(digits)) return `63${digits.slice(1)}`;

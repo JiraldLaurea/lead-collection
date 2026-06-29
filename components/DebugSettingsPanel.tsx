@@ -9,6 +9,7 @@ import type { DebugSettings } from "@/lib/debug-settings";
 export function DebugSettingsPanel({ settings }: { settings: DebugSettings }) {
   const [showLoadingModal, setShowLoadingModal] = useState(false);
   const [emailDryRunEnabled, setEmailDryRunEnabled] = useState(settings.emailDryRunEnabled);
+  const [smsDryRunEnabled, setSmsDryRunEnabled] = useState(settings.smsDryRunEnabled);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
   const [noticeType, setNoticeType] = useState<"success" | "error">("success");
@@ -20,13 +21,14 @@ export function DebugSettingsPanel({ settings }: { settings: DebugSettings }) {
     const response = await fetch("/api/settings/debug", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emailDryRunEnabled })
+      body: JSON.stringify({ emailDryRunEnabled, smsDryRunEnabled })
     });
     const payload = await response.json();
     setSaving(false);
 
     if (response.ok) {
       setEmailDryRunEnabled(payload.data.emailDryRunEnabled);
+      setSmsDryRunEnabled(payload.data.smsDryRunEnabled);
       setNoticeType("success");
       setNotice("Debug settings saved.");
       return;
@@ -42,7 +44,7 @@ export function DebugSettingsPanel({ settings }: { settings: DebugSettings }) {
       {saving ? <LoadingModal label="Saving debug settings" /> : null}
       {notice ? <Snackbar message={notice} type={noticeType} onDismiss={() => setNotice("")} /> : null}
       <div className="settings-panel-body">
-        <SettingPanelHeader title="Debug" subtitle="Preview internal UI states and test automation without real outbound email." />
+        <SettingPanelHeader title="Debug" subtitle="Preview internal UI states and test automation without real outbound email or SMS." />
         <label className="switch-field">
           <input
             name="emailDryRunEnabled"
@@ -56,6 +58,21 @@ export function DebugSettingsPanel({ settings }: { settings: DebugSettings }) {
           <span className="switch-copy">
             <strong>Disable actual email sending</strong>
             <span className="field-note">Automation will still record sent email logs, but SMTP will not send to real leads.</span>
+          </span>
+        </label>
+        <label className="switch-field">
+          <input
+            name="smsDryRunEnabled"
+            type="checkbox"
+            checked={smsDryRunEnabled}
+            onChange={(event) => setSmsDryRunEnabled(event.target.checked)}
+          />
+          <span className="switch-track" aria-hidden="true">
+            <span className="switch-thumb" />
+          </span>
+          <span className="switch-copy">
+            <strong>Disable actual SMS sending</strong>
+            <span className="field-note">Sends will still record SMS logs, but the SMS provider will not message real leads.</span>
           </span>
         </label>
       </div>

@@ -32,6 +32,7 @@ model Lead {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
   emailLogs       EmailLog[]
+  smsLogs         SmsLog[]
 
   @@index([searchKeyword])
   @@index([searchLocation])
@@ -109,4 +110,24 @@ model EmailLog {
   @@index([sentAt])
   @@index([status])
   @@map("email_logs")
+}
+
+model SmsLog {
+  id                Int      @id @default(autoincrement())
+  leadId            Int?     @map("lead_id")
+  businessName      String   @map("business_name")
+  phone             String
+  status            String
+  provider          String?
+  body              String?
+  providerMessageId String?  @map("provider_message_id")
+  errorMessage      String?  @map("error_message")
+  sentAt            DateTime @default(now()) @map("sent_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  lead              Lead?    @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([sentAt])
+  @@index([status])
+  @@map("sms_logs")
 }

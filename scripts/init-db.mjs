@@ -87,6 +87,22 @@ CREATE TABLE IF NOT EXISTS email_logs (
   CONSTRAINT email_logs_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES leads (id) ON DELETE SET NULL ON UPDATE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS sms_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id INTEGER,
+  business_name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  status TEXT NOT NULL,
+  provider TEXT,
+  body TEXT,
+  provider_message_id TEXT,
+  error_message TEXT,
+  sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT sms_logs_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES leads (id) ON DELETE SET NULL ON UPDATE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS leads_search_keyword_idx ON leads(search_keyword);
 CREATE INDEX IF NOT EXISTS leads_search_location_idx ON leads(search_location);
 CREATE INDEX IF NOT EXISTS leads_category_idx ON leads(category);
@@ -96,6 +112,8 @@ CREATE INDEX IF NOT EXISTS api_error_logs_provider_idx ON api_error_logs(provide
 CREATE INDEX IF NOT EXISTS search_jobs_status_idx ON search_jobs(status);
 CREATE INDEX IF NOT EXISTS email_logs_sent_at_idx ON email_logs(sent_at);
 CREATE INDEX IF NOT EXISTS email_logs_status_idx ON email_logs(status);
+CREATE INDEX IF NOT EXISTS sms_logs_sent_at_idx ON sms_logs(sent_at);
+CREATE INDEX IF NOT EXISTS sms_logs_status_idx ON sms_logs(status);
 `);
 
 const leadColumns = new Set(db.prepare("PRAGMA table_info(leads)").all().map((column) => column.name));
