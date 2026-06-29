@@ -8,13 +8,15 @@ import { LoadingModal } from "@/components/LoadingModal";
 import { Snackbar } from "@/components/Snackbar";
 import { TableStatusRow } from "@/components/TableStatusRow";
 import { emailSubjectTemplate } from "@/lib/email-template-defaults";
+import { defaultSmsBodyTemplate } from "@/lib/sms-template-defaults";
 import { fetchWithTimeout, isAbortError } from "@/lib/fetch-timeout";
-import { emailStatusPillClassName, formatCategoryLabel, formatEmailStatus } from "@/lib/format";
+import { emailStatusPillClassName, formatCategoryLabel, formatCity, formatDateTime, formatEmailStatus } from "@/lib/format";
 import type { LeadFilters } from "@/lib/leads";
 
 export type LeadSelectionItem = {
   id: number;
   businessName: string;
+  searchLocation: string;
   category: string | null;
   formattedAddress: string | null;
   phoneNumber: string | null;
@@ -22,6 +24,7 @@ export type LeadSelectionItem = {
   emailStatus: string | null;
   websiteUrl: string | null;
   rating: number | null;
+  collectedAt: Date | string;
 };
 
 type LeadSelectionTableProps = {
@@ -63,8 +66,12 @@ export function LeadSelectionTable({
   const [attachments, setAttachments] = useState<File[]>([]);
   const [emailNotice, setEmailNotice] = useState("");
   const [emailNoticeType, setEmailNoticeType] = useState<"success" | "error">("success");
+  const [sendingSms, setSendingSms] = useState(false);
+  const [showSmsModal, setShowSmsModal] = useState(false);
+  const [smsBody, setSmsBody] = useState(defaultSmsBodyTemplate);
   const downloadMenuRef = useRef<HTMLDetailsElement>(null);
   const emailBodyTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const smsBodyTextareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentInputId = useId();
   const businessNamePlaceholder = "[business_name]";
   const selectedLeads = useMemo(
@@ -74,7 +81,8 @@ export function LeadSelectionTable({
   const visibleLeadIds = useMemo(() => leads.map((lead) => lead.id), [leads]);
   const selectedEmails = selectedLeads.map((lead) => lead.email).filter((email): email is string => Boolean(email));
   const selectedNeedsEmailDiscovery = selectedLeads.some(isEmailDiscoveryPending);
-  const selectedCanExportPhones = selectedLeads.some((lead) => hasExportablePhoneNumber(lead.phoneNumber));
+  const selectedSmsLeads = selectedLeads.filter((lead) => hasExportablePhoneNumber(lead.phoneNumber));
+  const selectedCanExportPhones = selectedSmsLeads.length > 0;
   const allSelected = visibleLeadIds.length > 0 && visibleLeadIds.every((id) => selectedIds.includes(id));
   const someSelected = visibleLeadIds.some((id) => selectedIds.includes(id)) && !allSelected;
   const emailDisplay = (lead: LeadSelectionItem) => lead.email || formatEmailStatus(lead.emailStatus);
@@ -218,6 +226,59 @@ export function LeadSelectionTable({
     setEmailNotice(firstDetailError || payload.error?.message || "Unable to send selected emails.");
   }
 
+  async function sendSelectedSms() {
+    if (selectedSmsLeads.length === 0 || sendingSms) return;
+    setEmailNotice("");
+    setEmailNoticeType("success");
+    setSendingSms(true);
+    const response = await fetch("/api/leads/send-sms", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        leadIds: selectedSmsLeads.map((lead) => lead.id),
+        body: smsBody
+      })
+    });
+    const payload = await response.json();
+    setSendingSms(false);
+
+    if (response.ok) {
+      setEmailNoticeType("success");
+      setEmailNotice(`Sent ${payload.data.sent} SMS message${payload.data.sent === 1 ? "" : "s"}.`);
+      setShowSmsModal(false);
+      return;
+    }
+
+    const firstDetailError = Array.isArray(payload.error?.details)
+      ? payload.error.details.find((detail: { error?: string }) => detail.error)?.error
+      : undefined;
+    setEmailNoticeType("error");
+    setEmailNotice(firstDetailError || payload.error?.message || "Unable to send selected SMS messages.");
+  }
+
+  function resetSmsTemplate() {
+    setSmsBody(defaultSmsBodyTemplate);
+  }
+
+  function insertSmsBusinessNamePlaceholder() {
+    const textarea = smsBodyTextareaRef.current;
+    if (!textarea) {
+      setSmsBody((current) => `${current}${current ? " " : ""}${businessNamePlaceholder}`);
+      return;
+    }
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const nextBody = `${smsBody.slice(0, start)}${businessNamePlaceholder}${smsBody.slice(end)}`;
+    setSmsBody(nextBody);
+
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const nextCursorPosition = start + businessNamePlaceholder.length;
+      textarea.setSelectionRange(nextCursorPosition, nextCursorPosition);
+    });
+  }
+
   function resetEmailTemplate() {
     setEmailSubject(emailSubjectTemplate);
     setEmailBody(emailBodyTemplate);
@@ -261,6 +322,77 @@ export function LeadSelectionTable({
         />
       ) : null}
       {sendingEmail ? <LoadingModal label="Sending emails" /> : null}
+      {sendingSms ? <LoadingModal label="Sending SMS" /> : null}
+      {showSmsModal ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sms-compose-title"
+          onClick={() => {
+            if (!sendingSms) setShowSmsModal(false);
+          }}
+        >
+          <div className="compose-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="compose-modal-scroll">
+              <div className="compose-modal-header">
+                <div>
+                  <h2 id="sms-compose-title">SMS selected leads</h2>
+                </div>
+                <button type="button" className="icon-button" aria-label="Close SMS modal" onClick={() => setShowSmsModal(false)} disabled={sendingSms}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="compose-modal-body">
+                <div className="compose-recipients">
+                  <span>Recipients</span>
+                  <div className="recipient-pills">
+                    {selectedSmsLeads.map((lead) => (
+                      <span className="recipient-pill" key={lead.id}>{lead.businessName}</span>
+                    ))}
+                  </div>
+                </div>
+                <label>
+                  Message
+                  <textarea ref={smsBodyTextareaRef} value={smsBody} onChange={(event) => setSmsBody(event.target.value)} rows={6} maxLength={1000} />
+                </label>
+                <div className="settings-template-helper">
+                  <button type="button" className="secondary compact-button" onClick={insertSmsBusinessNamePlaceholder} disabled={sendingSms}>
+                    <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 5v14" />
+                      <path d="M5 12h14" />
+                    </svg>
+                    Add [business_name]
+                  </button>
+                  <span className="field-note">{smsBody.length}/1000 characters</span>
+                </div>
+              </div>
+              <div className="compose-modal-actions">
+                <button type="button" className="secondary" onClick={resetSmsTemplate} disabled={sendingSms}>
+                  <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3 12a9 9 0 1 0 3-6.7" />
+                    <path d="M3 4v5h5" />
+                  </svg>
+                  Reset
+                </button>
+                <div className="compose-modal-action-group">
+                  <button type="button" className="secondary" onClick={() => setShowSmsModal(false)} disabled={sendingSms}>Cancel</button>
+                  <button type="button" onClick={sendSelectedSms} disabled={sendingSms || !smsBody.trim()}>
+                    <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="m22 2-7 20-4-9-9-4Z" />
+                      <path d="M22 2 11 13" />
+                    </svg>
+                    {sendingSms ? "Sending..." : "Send SMS"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {showEmailModal ? (
         <div
           className="modal-backdrop"
@@ -394,6 +526,17 @@ export function LeadSelectionTable({
             </svg>
             {sendingEmail ? "Sending..." : "Compose Email"}
           </button>
+          <button
+            type="button"
+            className="secondary"
+            disabled={selectedSmsLeads.length === 0 || sendingSms}
+            onClick={() => setShowSmsModal(true)}
+          >
+            <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
+            </svg>
+            {sendingSms ? "Sending..." : "Send SMS"}
+          </button>
         </div>
         <div className="bulk-actions-right">
           <LeadFiltersModal
@@ -453,6 +596,7 @@ export function LeadSelectionTable({
                     />
                   </span>
                 </th>
+                <th>City</th>
                 <th>Name</th>
                 <th>Category</th>
                 <th>Address</th>
@@ -460,8 +604,9 @@ export function LeadSelectionTable({
                 <th>Email</th>
                 <th>Website</th>
                 <th>Rating</th>
+                <th>Searched</th>
               </tr>
-              <TableStatusRow colSpan={8} itemCount={totalCount} selectedCount={selectedIds.length} itemLabel="lead" />
+              <TableStatusRow colSpan={10} itemCount={totalCount} selectedCount={selectedIds.length} itemLabel="lead" />
             </thead>
             <tbody>{leads.map((lead) => (
               <tr
@@ -503,6 +648,7 @@ export function LeadSelectionTable({
                     />
                   </span>
                 </td>
+                <td>{formatCity(lead.searchLocation)}</td>
                 <td>{lead.businessName}</td>
                 <td>{formatCategoryLabel(lead.category)}</td>
                 <td>{valueOrNA(lead.formattedAddress)}</td>
@@ -510,6 +656,7 @@ export function LeadSelectionTable({
                 <td>{lead.email ? emailDisplay(lead) : <span className={emailStatusPillClassName(lead.emailStatus)}>{emailDisplay(lead)}</span>}</td>
                 <td className="website-cell">{lead.websiteUrl ? <a href={lead.websiteUrl} target="_blank" rel="noopener noreferrer" onClick={(event) => event.stopPropagation()}>{lead.websiteUrl}</a> : "N/A"}</td>
                 <td>{valueOrNA(lead.rating)}</td>
+                <td className="datetime-cell">{formatDateTime(lead.collectedAt)}</td>
               </tr>
             ))}</tbody>
           </table>
