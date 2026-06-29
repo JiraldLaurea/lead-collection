@@ -113,7 +113,7 @@ export function LeadDetailActions({ leadId, businessName, email, emailBodyTempla
   }
 
   return (
-      <div className="detail-actions">
+      <div className="detail-header-actions">
       {loadingLabel ? <LoadingModal label={loadingLabel} /> : null}
       {showEmailModal ? (
         <div

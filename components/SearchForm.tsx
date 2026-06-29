@@ -20,39 +20,44 @@ export function SearchForm() {
     setError("");
     const form = new FormData(event.currentTarget);
     const payload = Object.fromEntries(form.entries());
+    const selectedCity = typeof payload.city === "string" ? payload.city : "";
     const maxResults = Math.min(Number(payload.maxResults || 30), 30);
-    const petMaxResults = Math.ceil(maxResults / 2);
-    const skinMaxResults = Math.floor(maxResults / 2);
-    const searches = [
-      { keyword: randomItem(petClinicKeywords), maxResults: petMaxResults },
-      { keyword: randomItem(skinClinicKeywords), maxResults: skinMaxResults }
-    ].filter((search) => search.maxResults > 0);
+    const targetCities = selectedCity ? [selectedCity] : [...fixedSearchCities];
+    const perCityMax = Math.max(1, Math.floor(maxResults / targetCities.length));
+    const petMaxResults = Math.ceil(perCityMax / 2);
+    const skinMaxResults = Math.floor(perCityMax / 2);
 
     let searchCount = 0;
-    for (const search of searches) {
-      const cityArea = randomItem(fixedSearchCities);
+    for (const cityArea of targetCities) {
       const coordinates = getCityCoordinates(cityArea);
-      const response = await fetch("/api/places/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          country: "Philippines",
-          cityArea,
-          searchType: "TEXT_SEARCH",
-          keyword: search.keyword,
-          latitude: coordinates?.latitude,
-          longitude: coordinates?.longitude,
-          maxResults: search.maxResults,
-          radius: 1000
-        })
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        setError(data.error?.message || "Search failed. Please try again.");
-        setLoading(false);
-        return;
+      const searches = [
+        { keyword: randomItem(petClinicKeywords), maxResults: petMaxResults },
+        { keyword: randomItem(skinClinicKeywords), maxResults: skinMaxResults }
+      ].filter((search) => search.maxResults > 0);
+
+      for (const search of searches) {
+        const response = await fetch("/api/places/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            country: "Philippines",
+            cityArea,
+            searchType: "TEXT_SEARCH",
+            keyword: search.keyword,
+            latitude: coordinates?.latitude,
+            longitude: coordinates?.longitude,
+            maxResults: search.maxResults,
+            radius: 1000
+          })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          setError(data.error?.message || "Search failed. Please try again.");
+          setLoading(false);
+          return;
+        }
+        searchCount += Number(data.data?.totalSaved ?? 0);
       }
-      searchCount += Number(data.data?.totalSaved ?? 0);
     }
     const params = new URLSearchParams({
       searchStatus: "success",
@@ -84,6 +89,15 @@ export function SearchForm() {
           </button>
         </div>
         <div className="grid fixed-search-grid">
+          <label>
+            City
+            <select name="city" defaultValue="">
+              <option value="">All cities</option>
+              {fixedSearchCities.map((city) => (
+                <option key={city} value={city}>{city}</option>
+              ))}
+            </select>
+          </label>
           <label>
             Max Results
             <input name="maxResults" type="number" min="1" max="30" defaultValue="30" />

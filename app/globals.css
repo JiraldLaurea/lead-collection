@@ -613,7 +613,7 @@ a {
 }
 
 .fixed-search-grid {
-  grid-template-columns: minmax(180px, 260px);
+  grid-template-columns: repeat(2, minmax(180px, 260px));
 }
 
 .search-info-modal {
@@ -1157,7 +1157,7 @@ table {
 
 .leads-table {
   table-layout: fixed;
-  min-width: 1600px;
+  min-width: 1850px;
 }
 
 .logs-table {
@@ -1183,42 +1183,53 @@ table {
 
 .leads-table th:nth-child(2),
 .leads-table td:nth-child(2) {
-  width: 20%;
+  width: 8%;
   padding-left: 12px;
 }
 
 .leads-table th:nth-child(3),
 .leads-table td:nth-child(3) {
-  width: 13%;
-  padding-right: 18px;
-  overflow-wrap: anywhere;
+  width: 16%;
 }
 
 .leads-table th:nth-child(4),
 .leads-table td:nth-child(4) {
-  width: 24%;
-  padding-left: 18px;
+  width: 9%;
+  padding-right: 18px;
+  overflow-wrap: anywhere;
 }
 
 .leads-table th:nth-child(5),
 .leads-table td:nth-child(5) {
-  width: 11%;
+  width: 18%;
+  padding-left: 18px;
 }
 
 .leads-table th:nth-child(6),
 .leads-table td:nth-child(6) {
-  width: 18%;
-  overflow-wrap: anywhere;
+  width: 9%;
 }
 
 .leads-table th:nth-child(7),
 .leads-table td:nth-child(7) {
-  width: 13%;
+  width: 12%;
+  overflow-wrap: anywhere;
 }
 
 .leads-table th:nth-child(8),
 .leads-table td:nth-child(8) {
-  width: 7%;
+  width: 11%;
+}
+
+.leads-table th:nth-child(9),
+.leads-table td:nth-child(9) {
+  width: 4%;
+}
+
+.leads-table th:nth-child(10),
+.leads-table td:nth-child(10) {
+  width: 9%;
+  padding-right: 18px;
 }
 
 .select-cell {
@@ -1313,6 +1324,10 @@ table {
 }
 
 .phone-cell {
+  white-space: nowrap;
+}
+
+.datetime-cell {
   white-space: nowrap;
 }
 
@@ -1417,15 +1432,19 @@ table {
   color: #1d4ed8;
 }
 
-.detail-actions {
+.detail-heading-bar {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.detail-header-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
   gap: 10px;
-  border-top: 1px solid var(--border);
-  background: #f8fafc;
-  padding: 12px 24px;
 }
 
 .detail-action-notice {
@@ -1534,10 +1553,10 @@ table {
   font-size: 14px;
 }
 
-.leads-table th:nth-child(5),
-.leads-table td:nth-child(5),
-.leads-table th:nth-child(8),
-.leads-table td:nth-child(8) {
+.leads-table th:nth-child(6),
+.leads-table td:nth-child(6),
+.leads-table th:nth-child(9),
+.leads-table td:nth-child(9) {
   text-align: center;
 }
 
