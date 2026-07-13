@@ -225,28 +225,3 @@ export const smeColumnUpgrades = [
   { table: "sme_business_profiles", column: "lead_status", definition: "lead_status TEXT NOT NULL DEFAULT 'NEW'" }
 ];
 
-/** Applies the SME schema to a Turso/libSQL database when one is configured. */
-export async function applySmeSchemaToTurso(statements) {
-  const url = process.env.TURSO_DATABASE_URL;
-  const authToken = process.env.TURSO_AUTH_TOKEN;
-  if (!url || !authToken || url.startsWith("libsql://replace_with")) return false;
-
-  const { createClient } = await import("@libsql/client");
-  const client = createClient({ url, authToken });
-  try {
-    for (const statement of statements) {
-      await client.execute(statement);
-    }
-    for (const upgrade of smeColumnUpgrades) {
-      try {
-        await client.execute(`ALTER TABLE ${upgrade.table} ADD COLUMN ${upgrade.definition}`);
-      } catch (error) {
-        // Already present: SQLite has no "ADD COLUMN IF NOT EXISTS".
-        if (!/duplicate column/i.test(String(error?.message ?? error))) throw error;
-      }
-    }
-  } finally {
-    client.close();
-  }
-  return true;
-}

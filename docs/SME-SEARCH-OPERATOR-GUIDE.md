@@ -135,6 +135,40 @@ recalculation inserts a new row stamped with its model version.
 
 ---
 
+## Deploying to the hosted (Turso) database
+
+`npm run db:push` applies the schema to the **local** SQLite file and, when Turso credentials
+are present in the loaded env file, to the **hosted** database as well. It is additive and
+idempotent — safe to run repeatedly.
+
+To push to the hosted database, run it with the hosted credentials:
+
+```bash
+node --env-file=.env.hosted scripts/init-db.mjs
+```
+
+Expected output:
+
+```
+Local SQLite database initialized at ...\data\leads.sqlite
+Hosted Turso database initialized (20 tables).
+```
+
+20 tables = 9 base + 11 SME.
+
+> **This was a live bug, not a precaution.** The base schema used to be applied only to the
+> local SQLite file, so the hosted Turso database had **zero tables** — a hosted deployment
+> would have failed on its first query. `scripts/base-schema.mjs` now holds the base DDL, and
+> `init-db.mjs` applies base + SME to both targets, so local and hosted cannot drift.
+
+### Before the hosted app can run SME Search
+
+1. `GOOGLE_MAPS_API_KEY` must be set in the hosting environment (Vercel project settings). It
+   is **not** in `.env.hosted` today.
+2. The hosted database starts empty — import the commercial roads and the franchise blacklist
+   through Settings → SME Search on the hosted app.
+3. Turn the feature on in Settings on the hosted app. It defaults to off.
+
 ## Rollback
 
 | Level | Action |
