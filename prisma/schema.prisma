@@ -121,6 +121,10 @@ model SmsLog {
   provider          String?
   body              String?
   providerMessageId String?  @map("provider_message_id")
+  deliveryStatus    String?  @map("delivery_status")
+  deliveryError     String?  @map("delivery_error")
+  deliveryReceipt   String?  @map("delivery_receipt")
+  deliveredAt       DateTime? @map("delivered_at")
   errorMessage      String?  @map("error_message")
   sentAt            DateTime @default(now()) @map("sent_at")
   createdAt         DateTime @default(now()) @map("created_at")
@@ -129,5 +133,46 @@ model SmsLog {
 
   @@index([sentAt])
   @@index([status])
+  @@index([deliveryStatus])
   @@map("sms_logs")
+}
+
+model CsvImport {
+  id          Int               @id @default(autoincrement())
+  fileName    String            @map("file_name")
+  importedAt  DateTime          @default(now()) @map("imported_at")
+  leads       ImportedCsvLead[]
+
+  @@index([importedAt])
+  @@map("csv_imports")
+}
+
+model ImportedCsvLead {
+  id                  Int       @id @default(autoincrement())
+  importId            Int       @map("import_id")
+  clientId            String?   @map("client_id")
+  businessName        String    @map("business_name")
+  industry            String?
+  cityArea            String?   @map("city_area")
+  priority            String?
+  leadSource          String?   @map("lead_source")
+  contactName         String?   @map("contact_name")
+  phoneNumber         String?   @map("phone_number")
+  email               String?
+  socialUrl           String?   @map("social_url")
+  status              String?
+  packageName         String?   @map("package_name")
+  estimatedMonthlyFee String?   @map("estimated_monthly_fee")
+  adBudget            String?   @map("ad_budget")
+  lastContact         String?   @map("last_contact")
+  nextFollowUp        String?   @map("next_follow_up")
+  owner               String?
+  mainGoal            String?   @map("main_goal")
+  notes               String?
+  createdAt           DateTime  @default(now()) @map("created_at")
+  import              CsvImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@index([importId])
+  @@index([businessName])
+  @@map("imported_csv_leads")
 }

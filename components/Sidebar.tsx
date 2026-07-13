@@ -36,12 +36,56 @@ const navGroups = [
         )
       },
       {
+        href: "/csv-leads",
+        label: "CSV Leads",
+        icon: (
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 4h16v16H4Z" />
+            <path d="M4 9h16M9 4v16" />
+            <path d="m14 14 2-2 2 2M16 12v5" />
+          </svg>
+        )
+      },
+      {
+        href: "/compose-email",
+        label: "Compose Email",
+        icon: (
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16v12H4Z" />
+            <path d="m4 7 8 6 8-6" />
+            <path d="M16 3v6M13 6h6" />
+          </svg>
+        )
+      },
+      {
+        href: "/send-sms",
+        label: "Send SMS",
+        icon: (
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16v11H7l-3 3Z" />
+            <path d="m13 9 4 3-4 3" />
+            <path d="M7 12h9" />
+          </svg>
+        )
+      },
+      {
         href: "/email-log",
         label: "Email Log",
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 6h16v12H4Z" />
             <path d="m4 7 8 6 8-6" />
+          </svg>
+        )
+      },
+      {
+        href: "/sms-log",
+        label: "SMS Log",
+        icon: (
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 5h16v11H7l-3 3Z" />
+            <path d="M8 9h8" />
+            <path d="M8 13h5" />
           </svg>
         )
       },

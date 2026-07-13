@@ -96,11 +96,47 @@ CREATE TABLE IF NOT EXISTS sms_logs (
   provider TEXT,
   body TEXT,
   provider_message_id TEXT,
+  delivery_status TEXT,
+  delivery_error TEXT,
+  delivery_receipt TEXT,
+  delivered_at DATETIME,
   error_message TEXT,
   sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT sms_logs_lead_id_fkey FOREIGN KEY (lead_id) REFERENCES leads (id) ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS csv_imports (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_name TEXT NOT NULL,
+  imported_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS imported_csv_leads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  import_id INTEGER NOT NULL,
+  client_id TEXT,
+  business_name TEXT NOT NULL,
+  industry TEXT,
+  city_area TEXT,
+  priority TEXT,
+  lead_source TEXT,
+  contact_name TEXT,
+  phone_number TEXT,
+  email TEXT,
+  social_url TEXT,
+  status TEXT,
+  package_name TEXT,
+  estimated_monthly_fee TEXT,
+  ad_budget TEXT,
+  last_contact TEXT,
+  next_follow_up TEXT,
+  owner TEXT,
+  main_goal TEXT,
+  notes TEXT,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT imported_csv_leads_import_id_fkey FOREIGN KEY (import_id) REFERENCES csv_imports (id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS leads_search_keyword_idx ON leads(search_keyword);
@@ -114,6 +150,9 @@ CREATE INDEX IF NOT EXISTS email_logs_sent_at_idx ON email_logs(sent_at);
 CREATE INDEX IF NOT EXISTS email_logs_status_idx ON email_logs(status);
 CREATE INDEX IF NOT EXISTS sms_logs_sent_at_idx ON sms_logs(sent_at);
 CREATE INDEX IF NOT EXISTS sms_logs_status_idx ON sms_logs(status);
+CREATE INDEX IF NOT EXISTS csv_imports_imported_at_idx ON csv_imports(imported_at);
+CREATE INDEX IF NOT EXISTS imported_csv_leads_import_id_idx ON imported_csv_leads(import_id);
+CREATE INDEX IF NOT EXISTS imported_csv_leads_business_name_idx ON imported_csv_leads(business_name);
 `);
 
 const leadColumns = new Set(db.prepare("PRAGMA table_info(leads)").all().map((column) => column.name));
@@ -127,6 +166,19 @@ addLeadColumn("email", "email TEXT");
 addLeadColumn("email_source", "email_source TEXT");
 addLeadColumn("email_status", "email_status TEXT");
 addLeadColumn("email_checked_at", "email_checked_at DATETIME");
+
+const smsLogColumns = new Set(db.prepare("PRAGMA table_info(sms_logs)").all().map((column) => column.name));
+const addSmsLogColumn = (name, definition) => {
+  if (!smsLogColumns.has(name)) {
+    db.exec(`ALTER TABLE sms_logs ADD COLUMN ${definition}`);
+  }
+};
+
+addSmsLogColumn("delivery_status", "delivery_status TEXT");
+addSmsLogColumn("delivery_error", "delivery_error TEXT");
+addSmsLogColumn("delivery_receipt", "delivery_receipt TEXT");
+addSmsLogColumn("delivered_at", "delivered_at DATETIME");
+db.exec("CREATE INDEX IF NOT EXISTS sms_logs_delivery_status_idx ON sms_logs(delivery_status)");
 
 db.close();
 console.log(`SQLite database initialized at ${dbPath}`);

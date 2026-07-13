@@ -11,6 +11,7 @@ export function DebugSettingsPanel({ settings }: { settings: DebugSettings }) {
   const [emailDryRunEnabled, setEmailDryRunEnabled] = useState(settings.emailDryRunEnabled);
   const [smsDryRunEnabled, setSmsDryRunEnabled] = useState(settings.smsDryRunEnabled);
   const [saving, setSaving] = useState(false);
+  const [creatingSampleLead, setCreatingSampleLead] = useState(false);
   const [notice, setNotice] = useState("");
   const [noticeType, setNoticeType] = useState<"success" | "error">("success");
 
@@ -38,10 +39,28 @@ export function DebugSettingsPanel({ settings }: { settings: DebugSettings }) {
     setNotice(payload.error?.message || "Unable to save debug settings.");
   }
 
+  async function createSampleLead() {
+    setNotice("");
+    setCreatingSampleLead(true);
+    const response = await fetch("/api/settings/debug/sample-lead", { method: "POST" });
+    const payload = await response.json();
+    setCreatingSampleLead(false);
+
+    if (response.ok) {
+      setNoticeType("success");
+      setNotice(`Sample lead ready: ${payload.data.businessName} (${payload.data.phoneNumber}, ${payload.data.email}).`);
+      return;
+    }
+
+    setNoticeType("error");
+    setNotice(payload.error?.message || "Unable to create sample lead.");
+  }
+
   return (
     <form className="panel settings-panel" onSubmit={saveSettings}>
       {showLoadingModal ? <LoadingModal label="Debug loading modal" onCancel={() => setShowLoadingModal(false)} /> : null}
       {saving ? <LoadingModal label="Saving debug settings" /> : null}
+      {creatingSampleLead ? <LoadingModal label="Creating sample lead" /> : null}
       {notice ? <Snackbar message={notice} type={noticeType} onDismiss={() => setNotice("")} /> : null}
       <div className="settings-panel-body">
         <SettingPanelHeader title="Debug" subtitle="Preview internal UI states and test automation without real outbound email or SMS." />
@@ -89,6 +108,15 @@ export function DebugSettingsPanel({ settings }: { settings: DebugSettings }) {
             <path d="m16.24 7.76 2.83-2.83" />
           </svg>
           Show loading modal
+        </button>
+        <button type="button" className="secondary" onClick={createSampleLead} disabled={creatingSampleLead}>
+          <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M19 8v6" />
+            <path d="M22 11h-6" />
+          </svg>
+          Create sample lead
         </button>
         <button type="submit" disabled={saving}>
           <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">

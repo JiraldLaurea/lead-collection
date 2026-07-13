@@ -12,6 +12,13 @@ type LeadEmailInput = {
   }>;
 };
 
+type ManualEmailInput = {
+  email: string;
+  subject: string;
+  body: string;
+  attachments?: LeadEmailInput["attachments"];
+};
+
 function requiredEnv(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is not configured`);
@@ -85,4 +92,21 @@ export async function sendLeadEmail(lead: LeadEmailInput) {
   });
 
   return { subject, body };
+}
+
+export async function sendManualEmail(message: ManualEmailInput) {
+  const transporter = getTransporter();
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const fromName = process.env.SMTP_FROM_NAME;
+  const fromAddress = fromName && from ? `"${fromName}" <${from}>` : from;
+
+  await transporter.sendMail({
+    from: fromAddress,
+    to: message.email,
+    subject: message.subject,
+    text: message.body,
+    attachments: message.attachments
+  });
+
+  return { subject: message.subject, body: message.body };
 }

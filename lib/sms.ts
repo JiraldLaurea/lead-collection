@@ -1,7 +1,9 @@
 // SMS service — provider-agnostic interface
 // Configure via environment variables:
-//   SMS_PROVIDER=movider|twilio|infobip|clicksend|mock
+//   SMS_PROVIDER=movider|twilio|infobip|clicksend|smpp|mock
 //   SMS_API_KEY, SMS_API_SECRET, SMS_SENDER_ID
+
+import { recordSmsDeliveryReceipt } from "@/lib/sms-delivery-receipts";
 
 export interface SmsResult {
   success: boolean;
@@ -20,6 +22,7 @@ export function buildLeadSmsBody(template: string, businessName: string) {
 export async function sendSms(phone: string, message: string): Promise<SmsResult> {
   const provider = process.env.SMS_PROVIDER ?? "mock";
 
+  if (provider === "smpp") return sendViaSmpp(phone, message);
   if (provider === "movider") return sendViaMovider(phone, message);
   if (provider === "twilio") return sendViaTwilio(phone, message);
   if (provider === "infobip") return sendViaInfobip(phone, message);
@@ -28,6 +31,192 @@ export async function sendSms(phone: string, message: string): Promise<SmsResult
   // Mock provider — logs the message; use in development
   console.log(`[SMS MOCK] To: ${phone}\n${message}\n`);
   return { success: true, provider_message_id: `mock_${Date.now()}` };
+}
+
+type SmppPdu = {
+  command?: string;
+  command_status?: number;
+  message_id?: string | Buffer;
+  message_state?: number | string;
+  receipted_message_id?: string | Buffer;
+  short_message?: unknown;
+  response?: (options?: Record<string, unknown>) => unknown;
+};
+
+type SmppSession = {
+  bind_transceiver: (options: Record<string, unknown>, callback: (pdu: SmppPdu) => void) => void;
+  bind_transmitter: (options: Record<string, unknown>, callback: (pdu: SmppPdu) => void) => void;
+  submit_sm: (options: Record<string, unknown>, callback: (pdu: SmppPdu) => void) => void;
+  send: (pdu: unknown) => void;
+  close: () => void;
+  destroy: () => void;
+  on: (event: string, callback: (...args: unknown[]) => void) => void;
+};
+
+type SmppModule = {
+  connect: (options: Record<string, unknown>, callback: () => void) => SmppSession;
+};
+
+let smppSessionPromise: Promise<SmppSession> | null = null;
+let smppSession: SmppSession | null = null;
+
+async function sendViaSmpp(phone: string, message: string): Promise<SmsResult> {
+  const host = process.env.SMPP_HOST;
+  const port = process.env.SMPP_PORT ?? "2775";
+  const systemId = process.env.SMPP_SYSTEM_ID;
+  const password = process.env.SMPP_PASSWORD;
+  const bindType = process.env.SMPP_BIND_TYPE ?? "transceiver";
+
+  if (!host || !systemId || !password) {
+    return { success: false, error: "SMPP credentials not configured (SMPP_HOST, SMPP_SYSTEM_ID, SMPP_PASSWORD)" };
+  }
+
+  try {
+    const session = await getSmppSession({ host, port, systemId, password, bindType });
+    const sourceAddress = selectSmppSourceAddress(phone);
+
+    return await new Promise<SmsResult>((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve({ success: false, error: "SMPP submit_sm timed out" });
+      }, getEnvNumber("SMPP_SUBMIT_TIMEOUT_MS", 30000));
+
+      session.submit_sm({
+        source_addr: sourceAddress,
+        source_addr_ton: getEnvNumber("SMPP_SOURCE_ADDR_TON", 5),
+        source_addr_npi: getEnvNumber("SMPP_SOURCE_ADDR_NPI", 0),
+        destination_addr: phone,
+        dest_addr_ton: getEnvNumber("SMPP_DEST_ADDR_TON", 1),
+        dest_addr_npi: getEnvNumber("SMPP_DEST_ADDR_NPI", 1),
+        registered_delivery: getEnvNumber("SMPP_REGISTERED_DELIVERY", 1),
+        short_message: message,
+      }, (pdu) => {
+        clearTimeout(timeout);
+        if (pdu.command_status === 0) {
+          return resolve({
+            success: true,
+            provider_message_id: pdu.message_id ? String(pdu.message_id) : undefined,
+          });
+        }
+
+        resolve({
+          success: false,
+          error: `SMPP submit_sm failed with command_status=${pdu.command_status ?? "unknown"}`,
+        });
+      });
+    });
+  } catch (error) {
+    resetSmppSession();
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function getSmppSession(options: {
+  host: string;
+  port: string;
+  systemId: string;
+  password: string;
+  bindType: string;
+}) {
+  if (smppSession) return Promise.resolve(smppSession);
+  if (smppSessionPromise) return smppSessionPromise;
+
+  smppSessionPromise = new Promise<SmppSession>((resolve, reject) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const smpp = require("smpp") as SmppModule;
+    const timeout = setTimeout(() => {
+      resetSmppSession();
+      reject(new Error("SMPP bind timed out"));
+    }, getEnvNumber("SMPP_BIND_TIMEOUT_MS", 30000));
+
+    const session = smpp.connect({
+      url: `smpp://${options.host}:${options.port}`,
+      auto_enquire_link_period: getEnvNumber("SMPP_ENQUIRE_LINK_MS", 10000),
+      connectTimeout: getEnvNumber("SMPP_CONNECT_TIMEOUT_MS", 30000),
+      debug: process.env.SMPP_DEBUG === "true",
+    }, () => {
+      const bindOptions = {
+        system_id: options.systemId,
+        password: options.password,
+      };
+      const bind = options.bindType === "transmitter"
+        ? session.bind_transmitter.bind(session)
+        : session.bind_transceiver.bind(session);
+
+      bind(bindOptions, (pdu) => {
+        clearTimeout(timeout);
+        if (pdu.command_status === 0) {
+          smppSession = session;
+          return resolve(session);
+        }
+        resetSmppSession();
+        reject(new Error(`SMPP bind failed with command_status=${pdu.command_status ?? "unknown"}`));
+      });
+    });
+
+    session.on("deliver_sm", (pdu: unknown) => {
+      const deliverPdu = pdu as SmppPdu;
+      void recordSmsDeliveryReceipt({
+        providerMessageId: deliverPdu.message_id ? String(deliverPdu.message_id) : null,
+        messageState: deliverPdu.message_state,
+        receiptedMessageId: deliverPdu.receipted_message_id,
+        shortMessage: deliverPdu.short_message,
+      }).catch((error) => {
+        console.error("[SMPP DLR] Unable to record delivery receipt", error);
+      });
+      if (deliverPdu.response) session.send(deliverPdu.response());
+    });
+    session.on("enquire_link", (pdu: unknown) => {
+      const enquirePdu = pdu as SmppPdu;
+      if (enquirePdu.response) session.send(enquirePdu.response());
+    });
+    session.on("close", () => resetSmppSession());
+    session.on("error", (error) => {
+      resetSmppSession();
+      reject(error instanceof Error ? error : new Error(String(error)));
+    });
+  });
+
+  return smppSessionPromise;
+}
+
+function resetSmppSession() {
+  smppSession = null;
+  smppSessionPromise = null;
+}
+
+function getEnvNumber(key: string, fallback: number) {
+  const value = Number(process.env[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function selectSmppSourceAddress(phone: string) {
+  const smartSender = process.env.SMPP_SOURCE_ADDR_SMART;
+  const globeSender = process.env.SMPP_SOURCE_ADDR_GLOBE;
+  const defaultSender = process.env.SMPP_SOURCE_ADDR ?? process.env.SMS_SENDER_ID ?? "QROAD";
+
+  if (smartSender && isLikelySmartNumber(phone)) return smartSender;
+  if (globeSender && isLikelyGlobeNumber(phone)) return globeSender;
+  return defaultSender;
+}
+
+function isLikelySmartNumber(phone: string) {
+  const prefix = phone.replace(/\D/g, "").slice(0, 5);
+  return [
+    "63907", "63908", "63909", "63910", "63911", "63912", "63913", "63914",
+    "63918", "63919", "63920", "63921", "63928", "63929", "63930", "63938",
+    "63939", "63946", "63947", "63948", "63949", "63950", "63951", "63961",
+    "63963", "63968", "63970", "63981", "63989", "63998", "63999",
+  ].includes(prefix);
+}
+
+function isLikelyGlobeNumber(phone: string) {
+  const prefix = phone.replace(/\D/g, "").slice(0, 5);
+  return [
+    "63905", "63906", "63915", "63916", "63917", "63926", "63927", "63935",
+    "63936", "63937", "63945", "63953", "63954", "63955", "63956", "63957",
+    "63958", "63959", "63965", "63966", "63967", "63975", "63976", "63977",
+    "63978", "63979", "63995", "63996", "63997",
+  ].includes(prefix);
 }
 
 // ─── Movider (Philippines) ───────────────────────────────────────────────────
