@@ -2,11 +2,11 @@ export const runtime = "nodejs";
 
 import { z } from "zod";
 import { getDebugSettings } from "@/lib/debug-settings";
-import { normalizePhilippineMobileNumber } from "@/lib/export";
 import { fail, ok } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { requireApiAdmin } from "@/lib/require-auth";
 import { buildLeadSmsBody, sendSms } from "@/lib/sms";
+import { screenSmsRecipients } from "@/lib/sme/suppression";
 
 const requestSchema = z.object({
   leadIds: z.array(z.number().int().positive()).min(1).max(5000),
@@ -19,12 +19,21 @@ export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return fail("E-CSV-SMS-01", "Invalid SMS request.", 400, parsed.error.flatten());
   const leads = await prisma.importedCsvLead.findMany({
-    where: { id: { in: parsed.data.leadIds }, phoneNumber: { not: null } },
+    where: { id: { in: parsed.data.leadIds } },
     select: { id: true, businessName: true, phoneNumber: true }
   });
-  const recipients = leads.map((lead) => ({ ...lead, phone: normalizePhilippineMobileNumber(lead.phoneNumber) }))
-    .filter((lead): lead is typeof lead & { phone: string } => Boolean(lead.phone));
-  if (recipients.length === 0) return fail("E-CSV-SMS-02", "No selected leads have a valid Philippine mobile number.", 400);
+
+  // Opt-out must hold on every send path, not just the one the SME feature happens to use.
+  // An imported CSV list is exactly where an opted-out number is most likely to reappear.
+  const screening = await screenSmsRecipients(leads);
+  const recipients = screening.sendable;
+
+  if (recipients.length === 0) {
+    return fail("E-CSV-SMS-02", "No selected leads have a contactable Philippine mobile number.", 400, {
+      screening: screening.summary,
+      excluded: screening.excluded
+    });
+  }
 
   const debugSettings = await getDebugSettings();
   const provider = process.env.SMS_PROVIDER ?? "mock";
@@ -44,5 +53,11 @@ export async function POST(request: Request) {
   }
   const sent = results.filter((result) => result.sent).length;
   if (sent === 0) return fail("E-CSV-SMS-03", "SMS sending failed.", 500, results);
-  return ok({ sent, failed: results.length - sent, results });
+  return ok({
+    sent,
+    failed: results.length - sent,
+    results,
+    screening: screening.summary,
+    excluded: screening.excluded
+  });
 }

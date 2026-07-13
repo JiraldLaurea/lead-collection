@@ -4,6 +4,7 @@ import { z } from "zod";
 import { fail, ok } from "@/lib/http";
 import { requireApiAdmin, requireSmeSearchApi } from "@/lib/require-auth";
 import { PlacesError } from "@/lib/sme/google-places";
+import { checkSearchRateLimit } from "@/lib/sme/rate-limit";
 import { runSmeSearch } from "@/lib/sme/run-search";
 
 const schema = z.object({
@@ -56,6 +57,16 @@ export async function POST(request: Request) {
   if (authError) return authError;
   const flagError = await requireSmeSearchApi();
   if (flagError) return flagError;
+
+  // Checked before the body is even parsed: every search spends real money at Google.
+  const rateLimit = checkSearchRateLimit();
+  if (!rateLimit.allowed) {
+    return fail(
+      "E-SME-09",
+      `Too many searches. Try again in ${rateLimit.retryAfterSeconds} second${rateLimit.retryAfterSeconds === 1 ? "" : "s"}.`,
+      429
+    );
+  }
 
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {

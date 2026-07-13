@@ -2,11 +2,11 @@ export const runtime = "nodejs";
 
 import { z } from "zod";
 import { getDebugSettings } from "@/lib/debug-settings";
-import { normalizePhilippineMobileNumber } from "@/lib/export";
 import { fail } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { requireApiAdmin } from "@/lib/require-auth";
 import { buildLeadSmsBody, sendSms } from "@/lib/sms";
+import { screenSmsRecipients } from "@/lib/sme/suppression";
 
 const recipientSchema = z.object({
   name: z.string().trim().max(120).optional(),
@@ -26,19 +26,27 @@ export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(payload);
   if (!parsed.success) return fail("E-MANUAL-SMS-01", "Enter valid recipients and message.", 400, parsed.error.flatten());
 
-  const recipients = parsed.data.recipients
-    .map((recipient) => ({
-      name: recipient.name?.trim() || "Manual SMS",
-      phone: normalizePhilippineMobileNumber(recipient.phone)
+  // Typing a number by hand must not be a way around an opt-out. The same screening runs
+  // here as on every other send path: it also de-duplicates and drops invalid numbers, which
+  // this route previously did itself.
+  const screening = await screenSmsRecipients(
+    parsed.data.recipients.map((recipient, index) => ({
+      id: index,
+      businessName: recipient.name?.trim() || "Manual SMS",
+      phoneNumber: recipient.phone
     }))
-    .filter((recipient): recipient is { name: string; phone: string } => Boolean(recipient.phone));
-
-  const uniqueRecipients = Array.from(
-    new Map(recipients.map((recipient) => [recipient.phone, recipient])).values()
   );
 
+  const uniqueRecipients = screening.sendable.map((recipient) => ({
+    name: recipient.businessName,
+    phone: recipient.phone
+  }));
+
   if (uniqueRecipients.length === 0) {
-    return fail("E-MANUAL-SMS-02", "Enter at least one valid Philippine mobile number.", 400);
+    return fail("E-MANUAL-SMS-02", "No contactable Philippine mobile number was entered.", 400, {
+      screening: screening.summary,
+      excluded: screening.excluded
+    });
   }
 
   const debugSettings = await getDebugSettings();
@@ -85,7 +93,20 @@ export async function POST(request: Request) {
           });
           failed += 1;
         }
-        controller.enqueue(encoder.encode(`${JSON.stringify({ type: "progress", completed: index + 1, total: uniqueRecipients.length, sent, failed, error: errorMessage })}\n`));
+        controller.enqueue(
+          encoder.encode(
+            `${JSON.stringify({
+              type: "progress",
+              completed: index + 1,
+              total: uniqueRecipients.length,
+              sent,
+              failed,
+              // Extra field on the existing event shape, so the current parser is unaffected.
+              suppressed: screening.excluded.length,
+              error: errorMessage
+            })}\n`
+          )
+        );
       }
       controller.close();
     }

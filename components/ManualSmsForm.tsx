@@ -5,7 +5,15 @@ import { LoadingModal } from "@/components/LoadingModal";
 import { Snackbar } from "@/components/Snackbar";
 
 type Props = { defaultBody: string };
-type ProgressEvent = { completed: number; total: number; sent: number; failed: number; error?: string };
+type ProgressEvent = {
+  completed: number;
+  total: number;
+  sent: number;
+  failed: number;
+  /** Recipients the server refused to message (opted out, invalid, duplicate). */
+  suppressed?: number;
+  error?: string;
+};
 type ManualSmsRecipient = { name?: string; phone: string };
 
 export function ManualSmsForm({ defaultBody }: Props) {
@@ -52,6 +60,7 @@ export function ManualSmsForm({ defaultBody }: Props) {
       let buffer = "";
       let sent = 0;
       let failed = 0;
+      let suppressed = 0;
       let firstFailure = "";
       while (true) {
         const { value, done } = await reader.read();
@@ -64,13 +73,19 @@ export function ManualSmsForm({ defaultBody }: Props) {
           setProgress(progressEvent);
           sent = progressEvent.sent;
           failed = progressEvent.failed;
+          suppressed = progressEvent.suppressed ?? 0;
           if (progressEvent.error && !firstFailure) firstFailure = progressEvent.error;
         }
         if (done) break;
       }
       if (!sent) throw new Error(firstFailure || "SMS sending failed.");
       setNoticeType("success");
-      setNotice(`Sent ${sent} SMS message${sent === 1 ? "" : "s"}${failed ? `; ${failed} failed` : ""}.`);
+      setNotice(
+        `Sent ${sent} SMS message${sent === 1 ? "" : "s"}${failed ? `; ${failed} failed` : ""}${
+          // The user typed these numbers, so silently dropping them would be worse than saying so.
+          suppressed ? `; ${suppressed} skipped (opted out, duplicate or invalid)` : ""
+        }.`
+      );
       setRecipientsText("");
     } catch (error) {
       setNoticeType("error");

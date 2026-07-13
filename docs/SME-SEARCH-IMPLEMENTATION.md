@@ -14,7 +14,7 @@ Branch: `feature/sme-search-integration`
 - [x] **Phase 4** — SME Search UI
 - [x] **Phase 5** — Save as lead + existing SMS composer integration
 - [x] **Phase 6** — Lead score, statuses, admin controls
-- [ ] **Phase 7** — Stabilization, security review, acceptance
+- [x] **Phase 7** — Stabilization, security review, acceptance
 
 ## Feature flag
 
@@ -343,6 +343,70 @@ the file leaves the app there is no second chance to filter it (§12.5).
 - Saving persisted `sme_lead_scores` rows stamped `v1`.
 - Phone CSV export of 3 leads returned **1 number**: the Do Not Contact entry and a landline
   were both excluded.
+
+## Acceptance (Phase 7)
+
+Operator guide, configuration, rollback and known limitations:
+[SME-SEARCH-OPERATOR-GUIDE.md](SME-SEARCH-OPERATOR-GUIDE.md).
+
+### Two acceptance failures found and fixed in this phase
+
+**1. Opt-out could be bypassed — a §20.1 non-acceptance condition.** Phase 5 enforced
+suppression in `/api/leads/send-sms`, but the app has **three** SMS send paths. The other two —
+`/api/csv-leads/send-sms` and `/api/manual-sms` — sent with **no Do Not Contact check at all**.
+An opted-out business could be messaged by importing it in a CSV, or by typing its number into
+Send SMS by hand. Both now run the same server-side screening. Verified: typing the opted-out
+number by hand is refused.
+
+**2. No rate limit on search.** Every search costs real Google Places requests, so a retry
+loop or an impatient user could run up the bill. Now capped at 10/minute and 100/hour, checked
+before the request body is even parsed.
+
+Also fixed: `loadPriorBranchCounts` ran a **full table scan** of `sme_business_profiles` on
+every search (the index was on `normalized_name`, but the query uses `brand_candidate_name`).
+It now uses an index.
+
+### Checklist (work order 13.2)
+
+| Criterion | Result |
+| --- | --- |
+| Feature available only when enabled | **Pass** — flag off: nav item absent, page 404, API 404 |
+| Existing users can keep using the old SMS flow unchanged | **Pass** — with the flag off, `/api/leads/send-sms` sent normally; all 10 legacy pages render |
+| Search by road / city+category / radius / free text | **Pass** — all four verified live |
+| Google results normalized into internal models | **Pass** — nothing downstream sees Google's response shape |
+| Duplicates not repeatedly inserted | **Pass** — re-saving created 0 and linked 3 |
+| Known franchises excluded with a visible reason | **Pass** — Starbucks and Wendy's, each with its reason code |
+| Local SME chains can remain included | **Pass** — Panco Cafe and Nihon Cafe kept as `LOCAL_SME_CHAIN` |
+| Manual Review cannot enter bulk SMS without review | **Pass** — refused at save; not contactable |
+| Manual override is audited | **Pass** — auto class preserved, previous value, user, time and reason recorded |
+| Qualified businesses can be saved as leads | **Pass** — saved into the existing `leads` table |
+| Selected leads open the existing SMS composer | **Pass** — same route, same `SmsLog` |
+| Invalid, duplicate, missing, opted-out numbers excluded before send | **Pass** — on **all three** send paths |
+| Every bulk send requires preview and confirmation | **Pass** — recipient summary, per-recipient removal, explicit Send |
+| Send history linked back to the lead | **Pass** — `SmsLog.leadId` plus `ContactActivity` |
+| No API secret exposed to the browser | **Pass** — 0 occurrences of the key, `AIza`, `PrismaClient`, SMPP password, session secret or Turso token under `.next/static/` |
+| Production field masks explicit | **Pass** — no wildcard; discovery omits paid contact fields |
+| All migrations reversible | **Pass** — rehearsed on a copy of the real database |
+| All tests and builds pass | **Pass** — 147 tests, typecheck, lint, clean build |
+
+### Migration rollback, rehearsed on a copy of the real database
+
+After `npm run db:rollback:sme`: all 11 SME tables dropped, and every original table survived
+with identical row counts — `leads` 315, `access_logs` 572, `email_logs` 81, `sms_logs` 11,
+`imported_csv_leads` 114, `search_jobs` 63, `csv_imports` 1, `api_error_logs` 2,
+`app_settings` 12.
+
+### Security review
+
+- Google key: server-side only, never `NEXT_PUBLIC_`, redacted from every error path (a test
+  asserts a fabricated key is scrubbed).
+- Client bundle scanned for the real key, `AIza`, `PrismaClient`, `SMPP_PASSWORD`,
+  `SESSION_SECRET`, `TURSO_AUTH_TOKEN`, `SERPER_API_KEY` — **zero hits**.
+- `.env.local` is gitignored and not committed.
+- The only `AIza`-shaped string in the branch history is a **fabricated key inside a test**
+  asserting that redaction works.
+- Every SME route is guarded by `requireApiAdmin` and the feature flag; suppression is *not*
+  flag-gated, because a safety control must not be switchable.
 
 ## Baseline (recorded before any change, commit `9ea91cc`)
 

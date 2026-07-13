@@ -101,6 +101,9 @@ export const smeDdl = [
   )`,
   `CREATE INDEX IF NOT EXISTS sme_business_profiles_lead_id_idx ON sme_business_profiles(lead_id)`,
   `CREATE INDEX IF NOT EXISTS sme_business_profiles_normalized_name_idx ON sme_business_profiles(normalized_name)`,
+  // loadPriorBranchCounts() runs on every search and looks up by brand candidate. Without
+  // this index it scans the whole profile table, which grows with every saved lead.
+  `CREATE INDEX IF NOT EXISTS sme_business_profiles_brand_candidate_idx ON sme_business_profiles(brand_candidate_name)`,
   `CREATE INDEX IF NOT EXISTS sme_business_profiles_phone_number_idx ON sme_business_profiles(phone_number)`,
   `CREATE INDEX IF NOT EXISTS sme_business_profiles_website_host_idx ON sme_business_profiles(website_host)`,
 

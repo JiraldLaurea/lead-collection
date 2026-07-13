@@ -234,6 +234,8 @@ model SmeBusinessProfile {
 
   @@index([leadId])
   @@index([normalizedName])
+  // Branch counting looks up by brand candidate on every search; without this it scans.
+  @@index([brandCandidateName])
   @@index([phoneNumber])
   @@index([websiteHost])
   @@map("sme_business_profiles")
