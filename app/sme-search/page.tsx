@@ -3,10 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { fixedSearchCities } from "@/lib/search-defaults";
 import { philippinesCityCoordinates } from "@/lib/philippines-locations";
 import { requirePageAdmin, requireSmeSearchPage } from "@/lib/require-auth";
+import { getSmsBodyTemplate } from "@/lib/sms-template";
 
 export default async function SmeSearchPage() {
   await requirePageAdmin();
   await requireSmeSearchPage();
+
+  const smsBodyTemplate = await getSmsBodyTemplate();
 
   const zones = await prisma.smeSearchZone.findMany({
     where: { enabled: true },
@@ -34,7 +37,7 @@ export default async function SmeSearchPage() {
           review qualified SME candidates.
         </p>
       </div>
-      <SmeSearchWorkspace cities={cities} zones={zones} />
+      <SmeSearchWorkspace cities={cities} zones={zones} smsBodyTemplate={smsBodyTemplate} />
       {zones.length === 0 ? (
         <p className="muted">
           No commercial roads are configured yet. Import{" "}

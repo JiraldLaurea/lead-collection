@@ -2410,3 +2410,20 @@ a.button:hover {
   width: auto;
   margin: 0;
 }
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.sme-send-error {
+  margin: 0;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: var(--danger);
+  padding: 10px 12px;
+  font-size: 13px;
+}

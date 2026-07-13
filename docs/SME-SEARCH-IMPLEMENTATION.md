@@ -12,7 +12,7 @@ Branch: `feature/sme-search-integration`
 - [x] **Phase 2** — Additive schema, search-zone importer, franchise import template
 - [x] **Phase 3** — Name normalization, franchise exclusion, classification, dedupe
 - [x] **Phase 4** — SME Search UI
-- [ ] **Phase 5** — Save as lead + existing SMS composer integration
+- [x] **Phase 5** — Save as lead + existing SMS composer integration
 - [ ] **Phase 6** — Lead score, statuses, admin controls
 - [ ] **Phase 7** — Stabilization, security review, acceptance
 
@@ -227,6 +227,58 @@ Aguirre Avenue, BF Homes, cafés, 500 m — through the real API route as the UI
   nav item is absent. The application behaves exactly as before.
 - The Google API key appears in **zero** files under `.next/static/` — it never reaches the
   browser.
+
+## Save and SMS (Phase 5)
+
+**One SMS integration, one send history.** SME Search saves selected candidates as ordinary
+`leads` rows, then hands those lead IDs to the **existing** `POST /api/leads/send-sms` — the
+same route, the same `lib/sms.ts`, the same `SmsLog`. Nothing about the SMS provider or send
+history is forked.
+
+Saving is idempotent (keyed on the Google place ID) and **never sends anything**: SMS is
+always a separate, explicitly confirmed step. Franchises and unreviewed `MANUAL_REVIEW`
+businesses are refused at save time rather than silently entering the lead list.
+
+Google-sourced leads carry a `google:` place-ID prefix, mirroring the existing `serper:`
+prefix, so the two discovery paths coexist in one table and a lead's origin is readable
+from its key.
+
+### Suppression is enforced on the server
+
+`screenSmsRecipients` runs **inside the send route**, not only in the composer. A check that
+lives only in the UI can be bypassed by calling the API directly, and the work order treats
+bypassable opt-out as a non-acceptance condition (§20.1).
+
+It excludes: missing phone, non-mobile numbers, duplicates within the batch, Do Not Contact
+entries, and numbers that previously hard-failed (`UNDELIV`/`REJECTD`/`EXPIRED` — a carrier
+confirmed those undeliverable, and resending burns credits).
+
+**With an empty Do Not Contact list the behavior is identical to before**, so existing sends
+are unaffected. `POST /api/leads/sms-screening` is a dry run of the same logic, so the
+composer can show who will be excluded and why before the user confirms.
+
+### Live verification (13 Jul 2026)
+
+Aguirre Avenue cafés → save → SMS, against the real database:
+
+- **Save:** 3 leads created (`leads` went 309 → 312), linked to SME profiles with their
+  classification and evidence. Re-saving created **0** and linked the same 3 — idempotent.
+- **Screening:** of 3 selected, 1 sendable. One blocked as `DO_NOT_CONTACT`, one as
+  `INVALID_NUMBER` (a real landline, `(02) 7001 4906` — not an SMS-capable number).
+- **Bypass test:** calling `POST /api/leads/send-sms` **directly** with all 3 lead IDs, no UI
+  involved, still sent to only 1. The Do Not Contact number was blocked server-side.
+- Send recorded in the existing `SmsLog` (lead-linked) and in the new `ContactActivity`
+  timeline.
+
+### Bundle regression caught during the build
+
+`/sme-search` first weighed **307 kB** because the composer imported `exclusionLabels` from
+`lib/sme/suppression.ts`, which imports Prisma — dragging the database client into the
+browser bundle. The client-safe half now lives in `lib/sme/suppression-labels.ts`, and the
+page is **7.7 kB**, in line with `/leads`.
+
+Client bundle scanned: zero occurrences of `AIza`, `SMPP_PASSWORD`, `TURSO_AUTH`,
+`SESSION_SECRET` or `PrismaClient` under `.next/static/`.
 
 ## Baseline (recorded before any change, commit `9ea91cc`)
 

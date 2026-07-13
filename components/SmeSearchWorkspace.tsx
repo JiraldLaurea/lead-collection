@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import Checkbox from "@mui/material/Checkbox";
 import { LoadingModal } from "@/components/LoadingModal";
 import { SmeDetailDrawer } from "@/components/SmeDetailDrawer";
+import { SmsComposerModal } from "@/components/SmsComposerModal";
 import { Snackbar } from "@/components/Snackbar";
 import { TableStatusRow } from "@/components/TableStatusRow";
 import { smeCategories } from "@/lib/sme/categories";
@@ -14,6 +15,7 @@ import type { SearchMode, SearchRunSummary } from "@/lib/sme/types";
 type SmeSearchWorkspaceProps = {
   cities: string[];
   zones: { city: string; commercialArea: string; roadName: string; latitude: number | null; longitude: number | null; radiusMeters: number }[];
+  smsBodyTemplate: string;
 };
 
 const modes: { value: SearchMode; label: string; hint: string }[] = [
@@ -23,7 +25,7 @@ const modes: { value: SearchMode; label: string; hint: string }[] = [
   { value: "FREE_TEXT", label: "Free text", hint: "Search a natural-language query." }
 ];
 
-export function SmeSearchWorkspace({ cities, zones }: SmeSearchWorkspaceProps) {
+export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearchWorkspaceProps) {
   const [mode, setMode] = useState<SearchMode>("COMMERCIAL_ROAD");
   const [zoneKey, setZoneKey] = useState("");
   const [city, setCity] = useState("");
@@ -50,6 +52,10 @@ export function SmeSearchWorkspace({ cities, zones }: SmeSearchWorkspaceProps) {
   const [reviewCount, setReviewCount] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [detail, setDetail] = useState<SmeSearchResult | null>(null);
+  const [searchRunId, setSearchRunId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [composerLeadIds, setComposerLeadIds] = useState<number[] | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const selectedZone = zones.find(
@@ -134,6 +140,7 @@ export function SmeSearchWorkspace({ cities, zones }: SmeSearchWorkspaceProps) {
 
       setResults(data.data.results);
       setSummary(data.data.summary);
+      setSearchRunId(data.data.searchRunId ?? null);
       setReviewCount(data.data.needsReview?.length ?? 0);
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
@@ -144,6 +151,61 @@ export function SmeSearchWorkspace({ cities, zones }: SmeSearchWorkspaceProps) {
         abortRef.current = null;
       }
     }
+  }
+
+  const selectedResults = (results ?? []).filter((result) => selected.includes(result.providerPlaceId));
+
+  /**
+   * Saves the selected candidates and returns their lead IDs. Saving never sends anything —
+   * SMS is always a separate, explicitly confirmed step.
+   */
+  async function saveSelected(): Promise<number[] | null> {
+    if (selectedResults.length === 0 || saving) return null;
+    setSaving(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/sme-search/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ searchRunId: searchRunId ?? undefined, results: selectedResults })
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload.success) {
+        setError(payload.error?.message || "Unable to save the selected businesses.");
+        return null;
+      }
+
+      const { created, linked, skipped, leadIds } = payload.data;
+      const parts = [`${created} saved`];
+      if (linked > 0) parts.push(`${linked} already existed`);
+      if (skipped.length > 0) parts.push(`${skipped.length} skipped (needs review)`);
+      setNotice(parts.join(" · "));
+
+      // Reflect "Saved" in the table without re-running (and re-paying for) the search.
+      const savedIds = new Set(selectedResults.map((result) => result.providerPlaceId));
+      setResults((current) =>
+        (current ?? []).map((result) =>
+          savedIds.has(result.providerPlaceId) && result.savedLeadId === null
+            ? { ...result, savedLeadId: -1 }
+            : result
+        )
+      );
+
+      return leadIds as number[];
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveAndCompose() {
+    const leadIds = await saveSelected();
+    if (!leadIds || leadIds.length === 0) {
+      if (leadIds) setError("None of the selected businesses could be saved as leads.");
+      return;
+    }
+    setComposerLeadIds(leadIds);
   }
 
   function toggle(placeId: string) {
@@ -165,8 +227,22 @@ export function SmeSearchWorkspace({ cities, zones }: SmeSearchWorkspaceProps) {
   return (
     <>
       {loading ? <LoadingModal label="Searching Google Places" /> : null}
+      {saving ? <LoadingModal label="Saving leads" /> : null}
       {error ? <Snackbar message={error} type="error" onDismiss={() => setError("")} /> : null}
+      {notice ? <Snackbar message={notice} type="success" onDismiss={() => setNotice("")} /> : null}
       {detail ? <SmeDetailDrawer result={detail} onClose={() => setDetail(null)} /> : null}
+      {composerLeadIds ? (
+        <SmsComposerModal
+          leadIds={composerLeadIds}
+          initialBody={smsBodyTemplate}
+          onClose={() => setComposerLeadIds(null)}
+          onSent={(sent, failed) => {
+            setComposerLeadIds(null);
+            setSelected([]);
+            setNotice(`Sent ${sent} SMS message${sent === 1 ? "" : "s"}${failed > 0 ? `, ${failed} failed` : ""}.`);
+          }}
+        />
+      ) : null}
 
       <form className="panel settings-panel" onSubmit={search}>
         <div className="settings-panel-body">
@@ -348,6 +424,22 @@ export function SmeSearchWorkspace({ cities, zones }: SmeSearchWorkspaceProps) {
               <strong>{reviewCount}</strong> possible duplicates
             </span>
           ) : null}
+        </div>
+      ) : null}
+
+      {results ? (
+        <div className="table-actions">
+          <button
+            type="button"
+            className="secondary"
+            disabled={selected.length === 0 || saving}
+            onClick={saveSelected}
+          >
+            Save selected{selected.length > 0 ? ` (${selected.length})` : ""}
+          </button>
+          <button type="button" disabled={selected.length === 0 || saving} onClick={saveAndCompose}>
+            Save &amp; open SMS composer
+          </button>
         </div>
       ) : null}
 
