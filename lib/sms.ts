@@ -22,6 +22,7 @@ export function buildLeadSmsBody(template: string, businessName: string) {
 export async function sendSms(phone: string, message: string): Promise<SmsResult> {
   const provider = process.env.SMS_PROVIDER ?? "mock";
 
+  if (provider === "smpp_worker") return sendViaSmppWorker(phone, message);
   if (provider === "smpp") return sendViaSmpp(phone, message);
   if (provider === "movider") return sendViaMovider(phone, message);
   if (provider === "twilio") return sendViaTwilio(phone, message);
@@ -31,6 +32,36 @@ export async function sendSms(phone: string, message: string): Promise<SmsResult
   // Mock provider — logs the message; use in development
   console.log(`[SMS MOCK] To: ${phone}\n${message}\n`);
   return { success: true, provider_message_id: `mock_${Date.now()}` };
+}
+
+async function sendViaSmppWorker(phone: string, message: string): Promise<SmsResult> {
+  const workerUrl = process.env.SMPP_WORKER_URL;
+  const apiToken = process.env.SMPP_WORKER_API_TOKEN;
+  if (!workerUrl || !apiToken) {
+    return { success: false, error: "SMPP worker is not configured (SMPP_WORKER_URL, SMPP_WORKER_API_TOKEN)" };
+  }
+
+  try {
+    const response = await fetch(new URL("/messages", workerUrl), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ to: phone, message })
+    });
+    const payload = await response.json().catch(() => null) as {
+      success?: boolean;
+      provider_message_id?: string;
+      error?: string;
+    } | null;
+    if (!response.ok || !payload?.success) {
+      return { success: false, error: payload?.error ?? `SMPP worker HTTP ${response.status}` };
+    }
+    return { success: true, provider_message_id: payload.provider_message_id };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 type SmppPdu = {
@@ -47,82 +78,272 @@ type SmppSession = {
   bind_transceiver: (options: Record<string, unknown>, callback: (pdu: SmppPdu) => void) => void;
   bind_transmitter: (options: Record<string, unknown>, callback: (pdu: SmppPdu) => void) => void;
   submit_sm: (options: Record<string, unknown>, callback: (pdu: SmppPdu) => void) => void;
+  query_sm: (options: Record<string, unknown>, callback: (pdu: SmppPdu) => void) => void;
+  unbind: (callback?: (pdu: SmppPdu) => void) => void;
   send: (pdu: unknown) => void;
   close: () => void;
   destroy: () => void;
   on: (event: string, callback: (...args: unknown[]) => void) => void;
 };
 
+/** SMPP command_status values we can explain to the operator rather than just echoing a number. */
+const smppBindErrors: Record<number, string> = {
+  5: "the SMSC still has an earlier session bound (ESME_RALYBND). It usually clears within a few minutes; a stale session is left behind when the app is force-killed instead of shut down cleanly.",
+  13: "the SMSC rejected the bind (ESME_RBINDFAIL). Check the system ID, password and IP allowlist.",
+  14: "the SMPP password is wrong (ESME_RINVPASWD).",
+  15: "the SMPP system ID is wrong (ESME_RINVSYSID)."
+};
+
 type SmppModule = {
   connect: (options: Record<string, unknown>, callback: () => void) => SmppSession;
 };
 
-let smppSessionPromise: Promise<SmppSession> | null = null;
-let smppSession: SmppSession | null = null;
+/**
+ * The SMPP session is kept on globalThis, not in module scope, for the same reason
+ * lib/prisma.ts does it: Next.js hot-reloads modules in development.
+ *
+ * With module-scope state, every recompile of this file produced a fresh module whose
+ * `smppSession` was null — while the previous module's socket stayed bound and alive. The
+ * next send therefore opened a SECOND connection and re-bound, and the SMSC rejected it with
+ * command_status=5 (ESME_RALYBND, "already bound"), because most providers allow only one
+ * session per system ID. The symptom was SMS working right up until the first hot reload
+ * after a successful bind, then failing forever.
+ */
+const globalForSmpp = globalThis as unknown as {
+  smppSession?: SmppSession | null;
+  smppSessionPromise?: Promise<SmppSession> | null;
+};
 
-async function sendViaSmpp(phone: string, message: string): Promise<SmsResult> {
+function smppConfig() {
   const host = process.env.SMPP_HOST;
-  const port = process.env.SMPP_PORT ?? "2775";
   const systemId = process.env.SMPP_SYSTEM_ID;
   const password = process.env.SMPP_PASSWORD;
-  const bindType = process.env.SMPP_BIND_TYPE ?? "transceiver";
+  if (!host || !systemId || !password) return null;
 
-  if (!host || !systemId || !password) {
-    return { success: false, error: "SMPP credentials not configured (SMPP_HOST, SMPP_SYSTEM_ID, SMPP_PASSWORD)" };
-  }
+  return {
+    host,
+    port: process.env.SMPP_PORT ?? "2775",
+    systemId,
+    password,
+    bindType: process.env.SMPP_BIND_TYPE ?? "transceiver"
+  };
+}
 
-  try {
-    const session = await getSmppSession({ host, port, systemId, password, bindType });
-    const sourceAddress = selectSmppSourceAddress(phone);
+/** One submit_sm on an already-bound session. */
+function submitViaSmpp(session: SmppSession, phone: string, message: string): Promise<SmsResult> {
+  return new Promise<SmsResult>((resolve) => {
+    const timeout = setTimeout(() => {
+      resolve({ success: false, error: "SMPP submit_sm timed out" });
+    }, getEnvNumber("SMPP_SUBMIT_TIMEOUT_MS", 30000));
 
-    return await new Promise<SmsResult>((resolve) => {
-      const timeout = setTimeout(() => {
-        resolve({ success: false, error: "SMPP submit_sm timed out" });
-      }, getEnvNumber("SMPP_SUBMIT_TIMEOUT_MS", 30000));
-
-      session.submit_sm({
-        source_addr: sourceAddress,
+    session.submit_sm(
+      {
+        source_addr: selectSmppSourceAddress(phone),
         source_addr_ton: getEnvNumber("SMPP_SOURCE_ADDR_TON", 5),
         source_addr_npi: getEnvNumber("SMPP_SOURCE_ADDR_NPI", 0),
         destination_addr: phone,
         dest_addr_ton: getEnvNumber("SMPP_DEST_ADDR_TON", 1),
         dest_addr_npi: getEnvNumber("SMPP_DEST_ADDR_NPI", 1),
         registered_delivery: getEnvNumber("SMPP_REGISTERED_DELIVERY", 1),
-        short_message: message,
-      }, (pdu) => {
+        short_message: message
+      },
+      (pdu) => {
         clearTimeout(timeout);
         if (pdu.command_status === 0) {
           return resolve({
             success: true,
-            provider_message_id: pdu.message_id ? String(pdu.message_id) : undefined,
+            provider_message_id: pdu.message_id ? String(pdu.message_id) : undefined
           });
         }
-
         resolve({
           success: false,
-          error: `SMPP submit_sm failed with command_status=${pdu.command_status ?? "unknown"}`,
+          error: `SMPP submit_sm failed with command_status=${pdu.command_status ?? "unknown"}`
         });
-      });
-    });
+      }
+    );
+  });
+}
+
+async function sendViaSmpp(phone: string, message: string): Promise<SmsResult> {
+  const config = smppConfig();
+  if (!config) {
+    return { success: false, error: "SMPP credentials not configured (SMPP_HOST, SMPP_SYSTEM_ID, SMPP_PASSWORD)" };
+  }
+
+  try {
+    const session = await getSmppSession(config);
+    return await submitViaSmpp(session, phone, message);
   } catch (error) {
     resetSmppSession();
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
-function getSmppSession(options: {
+export type SmsBatchItem = { phone: string; message: string };
+
+/**
+ * Sends a batch, pipelining submit_sm instead of waiting for each response in turn.
+ *
+ * SMPP allows many requests in flight at once, and the provider allows SMPP_TPS per second —
+ * but the app used to await every submit individually, so a 50-recipient send meant 50
+ * sequential round-trips to the SMSC and took tens of seconds. SMPP_TPS was configured to 50
+ * and never referenced anywhere in the code.
+ *
+ * Sends are issued in one-second windows of at most SMPP_TPS messages, so throughput matches
+ * what the provider actually permits without exceeding it. Results are returned in the same
+ * order as the input.
+ */
+export async function sendSmsBatch(items: SmsBatchItem[]): Promise<SmsResult[]> {
+  if (items.length === 0) return [];
+
+  const provider = process.env.SMS_PROVIDER ?? "mock";
+
+  // Only SMPP supports pipelining here. Other providers are HTTP one-shot calls; keep them
+  // sequential rather than risk hammering a rate-limited REST API.
+  if (provider !== "smpp") {
+    const results: SmsResult[] = [];
+    for (const item of items) {
+      results.push(await sendSms(item.phone, item.message));
+    }
+    return results;
+  }
+
+  const config = smppConfig();
+  if (!config) {
+    const error = "SMPP credentials not configured (SMPP_HOST, SMPP_SYSTEM_ID, SMPP_PASSWORD)";
+    return items.map(() => ({ success: false, error }));
+  }
+
+  let session: SmppSession;
+  try {
+    session = await getSmppSession(config);
+  } catch (error) {
+    resetSmppSession();
+    const message = error instanceof Error ? error.message : String(error);
+    // A bind failure fails the whole batch — there is no session to submit on.
+    return items.map(() => ({ success: false, error: message }));
+  }
+
+  const tps = Math.min(Math.max(getEnvNumber("SMPP_TPS", 20), 1), 200);
+  const results: SmsResult[] = new Array(items.length);
+
+  for (let offset = 0; offset < items.length; offset += tps) {
+    const windowStartedAt = Date.now();
+    const window = items.slice(offset, offset + tps);
+
+    const settled = await Promise.all(
+      window.map((item) =>
+        submitViaSmpp(session, item.phone, item.message).catch((error) => ({
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        }))
+      )
+    );
+    settled.forEach((result, index) => {
+      results[offset + index] = result;
+    });
+
+    // Hold the provider's rate limit: at most SMPP_TPS messages per second.
+    const remaining = items.length - (offset + window.length);
+    if (remaining > 0) {
+      const elapsed = Date.now() - windowStartedAt;
+      if (elapsed < 1000) await sleep(1000 - elapsed);
+    }
+  }
+
+  return results;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Asks the SMSC what happened to a message, instead of waiting for it to tell us.
+ *
+ * Delivery receipts were purely passive: the app waited for a deliver_sm that might never
+ * come — because the provider does not send one, or because it arrived while the process was
+ * restarting. A row then sat at "pending" forever with no way to ever resolve. query_sm lets
+ * us pull the state on demand.
+ */
+export async function querySmppMessageState(
+  providerMessageId: string,
+  phone: string
+): Promise<{ state: number | string | null; error?: string }> {
+  const config = smppConfig();
+  if (!config) return { state: null, error: "SMPP credentials not configured" };
+
+  try {
+    const session = await getSmppSession(config);
+
+    return await new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve({ state: null, error: "SMPP query_sm timed out" });
+      }, getEnvNumber("SMPP_QUERY_TIMEOUT_MS", 15000));
+
+      session.query_sm(
+        {
+          message_id: providerMessageId,
+          source_addr: selectSmppSourceAddress(phone),
+          source_addr_ton: getEnvNumber("SMPP_SOURCE_ADDR_TON", 5),
+          source_addr_npi: getEnvNumber("SMPP_SOURCE_ADDR_NPI", 0)
+        },
+        (pdu) => {
+          clearTimeout(timeout);
+          if (pdu.command_status !== 0) {
+            return resolve({
+              state: null,
+              error: `query_sm failed with command_status=${pdu.command_status ?? "unknown"}`
+            });
+          }
+          resolve({ state: pdu.message_state ?? null });
+        }
+      );
+    });
+  } catch (error) {
+    resetSmppSession();
+    return { state: null, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * Binds at startup rather than lazily on the first send, so the first message does not pay
+ * the bind handshake, and bad credentials surface at boot instead of mid-campaign.
+ */
+export async function warmSmppSession() {
+  if ((process.env.SMS_PROVIDER ?? "mock") !== "smpp") return false;
+  const config = smppConfig();
+  if (!config) return false;
+
+  try {
+    await getSmppSession(config);
+    return true;
+  } catch (error) {
+    resetSmppSession();
+    console.error("[SMPP] startup bind failed:", error instanceof Error ? error.message : error);
+    return false;
+  }
+}
+
+/** Loads the SMPP driver. A dynamic import (rather than require) keeps this mockable in tests. */
+async function loadSmppModule(): Promise<SmppModule> {
+  const loaded = (await import("smpp")) as unknown as SmppModule & { default?: SmppModule };
+  return loaded.default ?? loaded;
+}
+
+async function getSmppSession(options: {
   host: string;
   port: string;
   systemId: string;
   password: string;
   bindType: string;
-}) {
-  if (smppSession) return Promise.resolve(smppSession);
-  if (smppSessionPromise) return smppSessionPromise;
+}): Promise<SmppSession> {
+  if (globalForSmpp.smppSession) return globalForSmpp.smppSession;
+  if (globalForSmpp.smppSessionPromise) return globalForSmpp.smppSessionPromise;
 
-  smppSessionPromise = new Promise<SmppSession>((resolve, reject) => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const smpp = require("smpp") as SmppModule;
+  const smpp = await loadSmppModule();
+
+  globalForSmpp.smppSessionPromise = new Promise<SmppSession>((resolve, reject) => {
     const timeout = setTimeout(() => {
       resetSmppSession();
       reject(new Error("SMPP bind timed out"));
@@ -145,11 +366,18 @@ function getSmppSession(options: {
       bind(bindOptions, (pdu) => {
         clearTimeout(timeout);
         if (pdu.command_status === 0) {
-          smppSession = session;
+          globalForSmpp.smppSession = session;
+          registerSmppShutdown();
           return resolve(session);
         }
         resetSmppSession();
-        reject(new Error(`SMPP bind failed with command_status=${pdu.command_status ?? "unknown"}`));
+        const status = pdu.command_status ?? -1;
+        const explanation = smppBindErrors[status];
+        reject(
+          new Error(
+            `SMPP bind failed with command_status=${status}${explanation ? ` — ${explanation}` : ""}`
+          )
+        );
       });
     });
 
@@ -176,12 +404,61 @@ function getSmppSession(options: {
     });
   });
 
-  return smppSessionPromise;
+  return globalForSmpp.smppSessionPromise;
 }
 
 function resetSmppSession() {
-  smppSession = null;
-  smppSessionPromise = null;
+  globalForSmpp.smppSession = null;
+  globalForSmpp.smppSessionPromise = null;
+}
+
+let smppShutdownRegistered = false;
+
+/**
+ * Unbinds cleanly when the process stops.
+ *
+ * Without this, stopping the app leaves the SMPP session open on the SMSC's side. The next
+ * bind is then rejected with command_status=5 (ESME_RALYBND, "already bound") until the
+ * provider times the zombie out — so SMS silently stops working after a restart, and any
+ * delivery receipt sent in the meantime is delivered to a session nobody is listening on.
+ *
+ * SIGKILL cannot be caught, so a force-kill can still orphan a session. Stopping the dev
+ * server with Ctrl+C, or the host stopping the process normally, is now handled.
+ */
+function registerSmppShutdown() {
+  if (smppShutdownRegistered) return;
+  smppShutdownRegistered = true;
+
+  const cleanup = () => {
+    const session = globalForSmpp.smppSession;
+    resetSmppSession();
+    if (!session) return;
+    try {
+      session.unbind(() => {
+        try {
+          session.close();
+        } catch {
+          // The socket may already be gone; nothing left to do.
+        }
+      });
+    } catch {
+      try {
+        session.destroy();
+      } catch {
+        // Same.
+      }
+    }
+  };
+
+  process.once("SIGINT", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.once("SIGTERM", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.once("beforeExit", cleanup);
 }
 
 function getEnvNumber(key: string, fallback: number) {

@@ -5,7 +5,7 @@ import { getDebugSettings } from "@/lib/debug-settings";
 import { fail } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { requireApiAdmin } from "@/lib/require-auth";
-import { buildLeadSmsBody, sendSms } from "@/lib/sms";
+import { buildLeadSmsBody, sendSmsBatch, type SmsResult } from "@/lib/sms";
 import { screenSmsRecipients } from "@/lib/sme/suppression";
 
 const recipientSchema = z.object({
@@ -52,58 +52,62 @@ export async function POST(request: Request) {
   const debugSettings = await getDebugSettings();
   const provider = process.env.SMS_PROVIDER ?? "mock";
   const encoder = new TextEncoder();
+  // Sent in chunks so the progress stream still updates, while each chunk is pipelined at the
+  // provider's permitted rate instead of one message at a time.
+  const chunkSize = 20;
+
   const stream = new ReadableStream({
     async start(controller) {
       let sent = 0;
       let failed = 0;
-      for (const [index, recipient] of uniqueRecipients.entries()) {
-        let errorMessage: string | undefined;
-        const message = buildLeadSmsBody(parsed.data.body, recipient.name);
-        try {
-          const result = debugSettings.smsDryRunEnabled
-            ? { success: true, provider_message_id: `dryrun_${Date.now()}` }
-            : await sendSms(recipient.phone, message);
+      let completed = 0;
+      let firstError: string | undefined;
 
-          if (!result.success) throw new Error(result.error || "Unable to send SMS");
+      for (let offset = 0; offset < uniqueRecipients.length; offset += chunkSize) {
+        const chunk = uniqueRecipients.slice(offset, offset + chunkSize);
+        const messages = chunk.map((recipient) => ({
+          phone: recipient.phone,
+          message: buildLeadSmsBody(parsed.data.body, recipient.name)
+        }));
 
-          await prisma.smsLog.create({
-            data: {
+        const sendResults: SmsResult[] = debugSettings.smsDryRunEnabled
+          ? messages.map(() => ({ success: true, provider_message_id: `dryrun_${Date.now()}` }))
+          : await sendSmsBatch(messages);
+
+        const sentAt = new Date();
+        await prisma.smsLog.createMany({
+          data: chunk.map((recipient, index) => {
+            const result = sendResults[index] ?? { success: false, error: "No result returned" };
+            if (result.success) sent += 1;
+            else {
+              failed += 1;
+              firstError = firstError ?? result.error ?? "Unable to send SMS";
+            }
+            return {
               businessName: recipient.name,
               phone: recipient.phone,
-              status: "sent",
+              status: result.success ? "sent" : "failed",
               provider,
-              body: message,
-              providerMessageId: result.provider_message_id ?? null,
-              sentAt: new Date()
-            }
-          });
-          sent += 1;
-        } catch (error) {
-          errorMessage = error instanceof Error ? error.message : "Unable to send SMS";
-          await prisma.smsLog.create({
-            data: {
-              businessName: recipient.name,
-              phone: recipient.phone,
-              status: "failed",
-              provider,
-              body: message,
-              errorMessage,
-              sentAt: new Date()
-            }
-          });
-          failed += 1;
-        }
+              body: messages[index].message,
+              providerMessageId: result.success ? result.provider_message_id ?? null : null,
+              errorMessage: result.success ? null : result.error ?? "Unable to send SMS",
+              sentAt
+            };
+          })
+        });
+
+        completed += chunk.length;
         controller.enqueue(
           encoder.encode(
             `${JSON.stringify({
               type: "progress",
-              completed: index + 1,
+              completed,
               total: uniqueRecipients.length,
               sent,
               failed,
               // Extra field on the existing event shape, so the current parser is unaffected.
               suppressed: screening.excluded.length,
-              error: errorMessage
+              error: firstError
             })}\n`
           )
         );
