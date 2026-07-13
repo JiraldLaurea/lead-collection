@@ -8,7 +8,7 @@ Branch: `feature/sme-search-integration`
 ## Phases
 
 - [x] **Phase 0** — Baseline, branch, feature flag
-- [ ] **Phase 1** — Google Places (New) adapter + internal search domain
+- [x] **Phase 1** — Google Places (New) adapter + internal search domain
 - [ ] **Phase 2** — Additive schema, search-zone importer, franchise import template
 - [ ] **Phase 3** — Name normalization, franchise exclusion, classification, dedupe
 - [ ] **Phase 4** — SME Search UI
@@ -28,6 +28,43 @@ Branch: `feature/sme-search-integration`
 | Gates | Sidebar nav item, `/sme-search` page, all `/api/sme-search/*` routes |
 
 When the flag is off, the application behaves exactly as it did before this work.
+
+## Google Places API (New)
+
+Provider: **Places API (New)** (`places.googleapis.com/v1`), server-side only, via
+`lib/sme/google-places.ts`. The legacy Places API is not used. The existing `/search`
+page still uses Serper and is untouched.
+
+Key: `GOOGLE_MAPS_API_KEY` in `.env.local`. Google Cloud project `local-leads-collection`,
+key restricted to *Places API (New)* only. Never prefixed `NEXT_PUBLIC_`.
+
+### Field-mask inventory (no wildcards anywhere)
+
+| Stage | Endpoint | Fields |
+| --- | --- | --- |
+| Discovery (nearby) | `places:searchNearby` | `places.id`, `displayName`, `formattedAddress`, `location`, `primaryType`, `types`, `businessStatus`, `googleMapsUri` |
+| Discovery (text) | `places:searchText` | as above, plus `nextPageToken` |
+| Contact / qualification | `places/{id}` | discovery fields plus `nationalPhoneNumber`, `internationalPhoneNumber`, `websiteUri`, `rating`, `userRatingCount` |
+
+Discovery deliberately omits phone, website, rating and review count: Google bills each
+request at the highest SKU tier its field mask touches. Those fields are fetched only at
+the details stage, for candidates that survive franchise screening. `reviews`, `photos`
+and generative summaries are never requested.
+
+### Live smoke test (13 Jul 2026)
+
+Verified against the real API with the production key:
+
+- `COMMERCIAL_ROAD` (cafe, Aguirre Avenue, BF Homes, Parañaque) → 5 real businesses with
+  genuine `ChIJ...` place IDs. Phone, website and rating all came back `null`, confirming
+  the discovery mask is honored and the cheap SKU is used.
+- `MAP_RADIUS` (restaurant, Makati CBD, 450 m) → Nearby Search with a circle restriction.
+- `places/{id}` details on those candidates → phone on 5 of 6, website on 3 of 6.
+
+Observation feeding Phase 3: the "websites" Google returns for these SMEs are frequently
+Facebook or Instagram pages, not owned domains. The shared-domain denylist in the
+classifier is therefore load-bearing — treating `facebook.com` as a brand domain would
+merge unrelated businesses into one phantom chain.
 
 ## Baseline (recorded before any change, commit `9ea91cc`)
 
