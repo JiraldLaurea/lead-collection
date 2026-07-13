@@ -48,11 +48,16 @@ export function leadsToCsv(leads: ExportLead[]) {
   return [header, ...rows].join("\n");
 }
 
-export function leadsToPhoneCsv(leads: ExportLead[]) {
+/**
+ * A phone export is an outreach list, so an opted-out number must never appear in it —
+ * once the file leaves the app there is no second chance to filter it (work order 12.5).
+ * Pass the suppression set from `getSuppressedPhones()`.
+ */
+export function leadsToPhoneCsv(leads: ExportLead[], suppressedPhones: Set<string> = new Set()) {
   const seenPhones = new Set<string>();
   const rows = leads.flatMap((lead) => {
     const phone = normalizePhilippineMobileNumber(lead.phoneNumber);
-    if (!phone || seenPhones.has(phone)) return [];
+    if (!phone || seenPhones.has(phone) || suppressedPhones.has(phone)) return [];
     seenPhones.add(phone);
     return [phone];
   });

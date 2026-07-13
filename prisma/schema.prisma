@@ -218,6 +218,7 @@ model SmeBusinessProfile {
   businessStatus     String?   @map("business_status")
   googleMapsUrl      String?   @map("google_maps_url")
   detailsFetched     Boolean   @default(false) @map("details_fetched")
+  leadStatus         String    @default("NEW") @map("lead_status")
   dataSource         String    @default("google_places") @map("data_source")
   sourceQuery        String?   @map("source_query")
   collectedAt        DateTime  @default(now()) @map("collected_at")

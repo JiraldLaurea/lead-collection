@@ -8,13 +8,21 @@ import { SmsComposerModal } from "@/components/SmsComposerModal";
 import { Snackbar } from "@/components/Snackbar";
 import { TableStatusRow } from "@/components/TableStatusRow";
 import { smeCategories } from "@/lib/sme/categories";
-import { smeClassLabel, smeClassPillClassName } from "@/lib/sme/labels";
+import { scoreBandPillClassName, smeClassLabel, smeClassPillClassName } from "@/lib/sme/labels";
 import type { SmeSearchResult } from "@/lib/sme/run-search";
 import type { SearchMode, SearchRunSummary } from "@/lib/sme/types";
 
 type SmeSearchWorkspaceProps = {
   cities: string[];
-  zones: { city: string; commercialArea: string; roadName: string; latitude: number | null; longitude: number | null; radiusMeters: number }[];
+  zones: {
+    city: string;
+    commercialArea: string;
+    roadName: string;
+    latitude: number | null;
+    longitude: number | null;
+    radiusMeters: number;
+    priority: string;
+  }[];
   smsBodyTemplate: string;
 };
 
@@ -63,11 +71,15 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
   );
 
   // Only businesses a human may safely bulk-contact are shown when "SME only" is on.
-  const visible = (results ?? []).filter((result) =>
-    smeOnly
-      ? ["INDEPENDENT_SME", "LOCAL_SME_CHAIN", "MANUAL_INCLUDE"].includes(result.classification.effectiveClass)
-      : true
-  );
+  // Highest score first, so the leads worth calling are at the top of the page.
+  const visible = (results ?? [])
+    .filter((result) =>
+      smeOnly
+        ? ["INDEPENDENT_SME", "LOCAL_SME_CHAIN", "MANUAL_INCLUDE"].includes(result.classification.effectiveClass)
+        : true
+    )
+    .slice()
+    .sort((left, right) => right.score.total - left.score.total);
 
   async function search(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -101,6 +113,8 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
       payload.commercialArea = selectedZone.commercialArea;
       payload.roadName = selectedZone.roadName;
       payload.category = category;
+      // Feeds the commercial-area-value factor of the lead score.
+      payload.zonePriority = selectedZone.priority;
       if (selectedZone.latitude !== null && selectedZone.longitude !== null) {
         payload.latitude = selectedZone.latitude;
         payload.longitude = selectedZone.longitude;
@@ -230,7 +244,22 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
       {saving ? <LoadingModal label="Saving leads" /> : null}
       {error ? <Snackbar message={error} type="error" onDismiss={() => setError("")} /> : null}
       {notice ? <Snackbar message={notice} type="success" onDismiss={() => setNotice("")} /> : null}
-      {detail ? <SmeDetailDrawer result={detail} onClose={() => setDetail(null)} /> : null}
+      {detail ? (
+        <SmeDetailDrawer
+          result={detail}
+          onClose={() => setDetail(null)}
+          onOverridden={(providerPlaceId, effectiveClass) => {
+            setResults((current) =>
+              (current ?? []).map((item) =>
+                item.providerPlaceId === providerPlaceId
+                  ? { ...item, classification: { ...item.classification, effectiveClass: effectiveClass as typeof item.classification.effectiveClass } }
+                  : item
+              )
+            );
+            setNotice(`Classification changed to ${effectiveClass}.`);
+          }}
+        />
+      ) : null}
       {composerLeadIds ? (
         <SmsComposerModal
           leadIds={composerLeadIds}
@@ -461,6 +490,7 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
                       />
                     </span>
                   </th>
+                  <th>Score</th>
                   <th>Business</th>
                   <th>Category</th>
                   <th>Location</th>
@@ -472,10 +502,10 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
                 </tr>
               </thead>
               <tbody>
-                <TableStatusRow colSpan={9} itemCount={visible.length} selectedCount={selected.length} itemLabel="result" />
+                <TableStatusRow colSpan={10} itemCount={visible.length} selectedCount={selected.length} itemLabel="result" />
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="muted">
+                    <td colSpan={10} className="muted">
                       No results. Try a wider radius, another category, or turn off &quot;SME only&quot; to see
                       excluded franchises.
                     </td>
@@ -492,6 +522,11 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
                             disabled={result.doNotContact}
                             onChange={() => toggle(result.providerPlaceId)}
                           />
+                        </span>
+                      </td>
+                      <td>
+                        <span className={scoreBandPillClassName(result.score.band)}>
+                          {result.score.total} · {result.score.band}
                         </span>
                       </td>
                       <td>{result.displayName}</td>

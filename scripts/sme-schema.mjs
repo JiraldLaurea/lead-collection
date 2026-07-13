@@ -89,6 +89,7 @@ export const smeDdl = [
     business_status TEXT,
     google_maps_url TEXT,
     details_fetched INTEGER NOT NULL DEFAULT 0,
+    lead_status TEXT NOT NULL DEFAULT 'NEW',
     data_source TEXT NOT NULL DEFAULT 'google_places',
     source_query TEXT,
     collected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -213,6 +214,14 @@ export const smeDdl = [
   `CREATE INDEX IF NOT EXISTS do_not_contact_active_idx ON do_not_contact(active)`
 ];
 
+/**
+ * Columns added to SME tables after they first shipped. `CREATE TABLE IF NOT EXISTS` is a
+ * no-op once the table exists, so a new column needs an explicit additive ALTER.
+ */
+export const smeColumnUpgrades = [
+  { table: "sme_business_profiles", column: "lead_status", definition: "lead_status TEXT NOT NULL DEFAULT 'NEW'" }
+];
+
 /** Applies the SME schema to a Turso/libSQL database when one is configured. */
 export async function applySmeSchemaToTurso(statements) {
   const url = process.env.TURSO_DATABASE_URL;
@@ -224,6 +233,14 @@ export async function applySmeSchemaToTurso(statements) {
   try {
     for (const statement of statements) {
       await client.execute(statement);
+    }
+    for (const upgrade of smeColumnUpgrades) {
+      try {
+        await client.execute(`ALTER TABLE ${upgrade.table} ADD COLUMN ${upgrade.definition}`);
+      } catch (error) {
+        // Already present: SQLite has no "ADD COLUMN IF NOT EXISTS".
+        if (!/duplicate column/i.test(String(error?.message ?? error))) throw error;
+      }
     }
   } finally {
     client.close();

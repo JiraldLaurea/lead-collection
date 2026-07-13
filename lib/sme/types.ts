@@ -14,6 +14,8 @@ export type SearchRequest = {
   longitude?: number;
   radiusMeters?: number;
   maxResults?: number;
+  /** Priority (A+/A/B+/B/C) of the commercial zone, when the search came from one. */
+  zonePriority?: string;
 };
 
 export type SearchFilters = {

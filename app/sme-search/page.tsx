@@ -20,7 +20,8 @@ export default async function SmeSearchPage() {
       roadName: true,
       latitude: true,
       longitude: true,
-      radiusMeters: true
+      radiusMeters: true,
+      priority: true
     }
   });
 

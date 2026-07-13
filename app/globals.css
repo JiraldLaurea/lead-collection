@@ -2427,3 +2427,9 @@ a.button:hover {
   padding: 10px 12px;
   font-size: 13px;
 }
+
+.sme-weight-warning {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.35;
+}

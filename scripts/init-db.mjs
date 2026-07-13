@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { applySmeSchemaToTurso, smeDdl } from "./sme-schema.mjs";
+import { applySmeSchemaToTurso, smeColumnUpgrades, smeDdl } from "./sme-schema.mjs";
 
 const dataDir = path.join(process.cwd(), "data");
 fs.mkdirSync(dataDir, { recursive: true });
@@ -184,6 +184,14 @@ db.exec("CREATE INDEX IF NOT EXISTS sms_logs_delivery_status_idx ON sms_logs(del
 // SME Search tables. Additive and idempotent: existing tables and rows are untouched.
 for (const statement of smeDdl) {
   db.exec(statement);
+}
+
+// Columns added to SME tables after they first shipped.
+for (const upgrade of smeColumnUpgrades) {
+  const columns = new Set(db.prepare(`PRAGMA table_info(${upgrade.table})`).all().map((column) => column.name));
+  if (!columns.has(upgrade.column)) {
+    db.exec(`ALTER TABLE ${upgrade.table} ADD COLUMN ${upgrade.definition}`);
+  }
 }
 
 db.close();

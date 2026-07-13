@@ -144,6 +144,20 @@ export async function saveSmeLeads(
       }
     });
 
+    // Recalculation inserts a new score row rather than overwriting: a score is only
+    // meaningful alongside the model version and inputs that produced it (work order 11.4).
+    if (result.score) {
+      await prisma.smeLeadScore.create({
+        data: {
+          businessId: profile.id,
+          version: result.score.version,
+          total: result.score.total,
+          band: result.score.band,
+          factors: JSON.stringify(result.score.factors)
+        }
+      });
+    }
+
     await prisma.contactActivity.create({
       data: {
         leadId: lead.id,

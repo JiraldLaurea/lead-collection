@@ -13,7 +13,7 @@ Branch: `feature/sme-search-integration`
 - [x] **Phase 3** — Name normalization, franchise exclusion, classification, dedupe
 - [x] **Phase 4** — SME Search UI
 - [x] **Phase 5** — Save as lead + existing SMS composer integration
-- [ ] **Phase 6** — Lead score, statuses, admin controls
+- [x] **Phase 6** — Lead score, statuses, admin controls
 - [ ] **Phase 7** — Stabilization, security review, acceptance
 
 ## Feature flag
@@ -279,6 +279,70 @@ page is **7.7 kB**, in line with `/leads`.
 
 Client bundle scanned: zero occurrences of `AIza`, `SMPP_PASSWORD`, `TURSO_AUTH`,
 `SESSION_SECRET` or `PrismaClient` under `.next/static/`.
+
+## Lead scoring and admin (Phase 6)
+
+100-point model, version-stamped (`v1`): SME confidence 25, marketing need 25, business
+potential 20, contact availability 20, commercial area value 10. Bands S (80+), A (65+),
+B (50+), C (35+), Low. Weights and chain thresholds are **administrator-editable in
+Settings** — no deployment needed — and must total 100, or the bands stop meaning the same
+thing between searches.
+
+Recalculating **inserts a new `sme_lead_scores` row**; a score is only meaningful next to the
+model version and inputs that produced it, so history is never rewritten (§11.4).
+
+### The honesty rule, enforced in code
+
+The work order is explicit: *missing evidence must remain unknown, not negative.* We collect
+no social-media data, so the scorer **never claims a business posts rarely or has an inactive
+Instagram**. It scores only what it observed:
+
+- No website at all → maximum marketing need (25/25). This is a real, observed gap.
+- Only a Facebook/Instagram page → high need (20/25), stated as "not an owned website".
+- A genuine owned website → the factor is marked **`unknown`** and capped at 35%, with the
+  evidence line saying content and social activity have *not been assessed*. An owned site
+  does not mean the marketing is good; it means we cannot tell.
+
+Commercial-area value is likewise `unknown` (0 points, flagged) when a search did not come
+from a configured zone. A test asserts the words "inactive" and "rarely posts" never appear
+in any evidence string.
+
+### A franchise gets no score, not a flattering one
+
+The first live run scored "Starbucks San Antonio Paranaque" at **54, band B** — its
+SME-confidence factor was correctly 0, but its phone, rating and A-priority category still
+added up to a respectable-looking number, and it sat in the results wearing a "B" badge as
+if it were worth calling. `FRANCHISE_EXCLUDED`, `LARGE_CHAIN` and `MANUAL_EXCLUDE` now score
+**0 / Low**, with an evidence line pointing to the override control. `MANUAL_REVIEW` still
+scores, because it may yet turn out to be a prospect.
+
+### Admin controls (Settings → SME Search)
+
+- Feature-flag toggle (replaces editing the database by hand).
+- Scoring weights and chain thresholds, validated.
+- Franchise blacklist and commercial-road CSV import, each with a **dry run** that reports
+  row-level errors and writes nothing.
+- Classification override in the detail drawer: the automatic class is **never overwritten**,
+  and who changed it, when, from what, and why are all recorded in `sme_classifications` and
+  `contact_activities`.
+
+### Exports respect Do Not Contact
+
+`leadsToPhoneCsv` now takes the suppression set. A phone export is an outreach list, and once
+the file leaves the app there is no second chance to filter it (§12.5).
+
+### Live verification (13 Jul 2026)
+
+- Scored search of Aguirre Avenue ranked 9 independents 84 → 64 (S/A/B), with Starbucks at
+  **0 / Low**. Top lead "Bee Better Bread Cafe" (84, band S): no website (25/25 need), phone
+  available, A-priority category, zone priority A.
+- Weights totalling 125 were **rejected**; a valid set saved.
+- Override of a saved business preserved `autoClass` while changing `effectiveClass`,
+  recorded `previousClass`, the user, the timestamp and the reason, and wrote a
+  `CLASSIFICATION_OVERRIDE` activity.
+- Saving persisted `sme_lead_scores` rows stamped `v1`.
+- Phone CSV export of 3 leads returned **1 number**: the Do Not Contact entry and a landline
+  were both excluded.
 
 ## Baseline (recorded before any change, commit `9ea91cc`)
 

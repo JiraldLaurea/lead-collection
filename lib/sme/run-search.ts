@@ -1,12 +1,15 @@
 import { normalizePhilippineMobileNumber } from "@/lib/export";
 import { prisma } from "@/lib/prisma";
+import { findSmeCategory } from "@/lib/sme/categories";
 import { classifyCandidates, type Classification } from "@/lib/sme/classify";
 import { loadFranchiseRules, loadPriorBranchCounts } from "@/lib/sme/classification-store";
 import { dedupeCandidates, type ReviewMatch } from "@/lib/sme/dedupe";
 import { placeDetails } from "@/lib/sme/google-places";
 import { toLeadPlaceId } from "@/lib/sme/lead-link";
 import { normalizeWebsiteHost } from "@/lib/sme/normalize-name";
+import { scoreLead, type LeadScore } from "@/lib/sme/score";
 import { runDiscovery } from "@/lib/sme/search";
+import { getSmeSettings } from "@/lib/sme/settings";
 import type { BusinessCandidate, SearchFilters, SearchRequest, SearchRunSummary } from "@/lib/sme/types";
 
 export type SmeSearchResult = {
@@ -24,6 +27,7 @@ export type SmeSearchResult = {
   businessStatus: string | null;
   googleMapsUri: string | null;
   classification: Classification;
+  score: LeadScore;
   /** Set when this business is already saved as a lead. */
   savedLeadId: number | null;
   alreadyContacted: boolean;
@@ -55,10 +59,11 @@ export async function runSmeSearch(
     const discovered = await runDiscovery(request, options);
     const { unique, needsReview } = dedupeCandidates(discovered);
     const rules = await loadFranchiseRules();
+    const settings = await getSmeSettings();
 
     // Screen franchises on the discovery data alone. Google bills per request, so we must
     // not pay for the contact details of a McDonald's we are about to throw away.
-    const screening = classifyCandidates(unique, rules);
+    const screening = classifyCandidates(unique, rules, { thresholds: settings.thresholds });
     const survivors = unique.filter(
       (candidate) => screening.get(candidate.providerPlaceId)?.effectiveClass !== "FRANCHISE_EXCLUDED"
     );
@@ -77,15 +82,24 @@ export async function runSmeSearch(
     // Re-classify with the fuller picture: website domains and prior branch counts are only
     // available now, and both can change a verdict.
     const priorBranchCounts = await loadPriorBranchCounts(detailed);
-    const classified = classifyCandidates(detailed, rules, { priorBranchCounts });
+    const classified = classifyCandidates(detailed, rules, {
+      priorBranchCounts,
+      thresholds: settings.thresholds
+    });
 
     const excluded = unique.filter(
       (candidate) => screening.get(candidate.providerPlaceId)?.effectiveClass === "FRANCHISE_EXCLUDED"
     );
 
+    const scoreContext = {
+      weights: settings.weights,
+      zonePriority: request.zonePriority ?? null,
+      categoryPriority: findSmeCategory(request.category)?.priority ?? null
+    };
+
     const all: SmeSearchResult[] = [
-      ...(await toResults(detailed, classified)),
-      ...(await toResults(excluded, screening))
+      ...(await toResults(detailed, classified, scoreContext)),
+      ...(await toResults(excluded, screening, scoreContext))
     ];
 
     const filtered = all.filter((result) => matchesFilters(result, filters));
@@ -131,7 +145,17 @@ export async function runSmeSearch(
   }
 }
 
-async function toResults(candidates: BusinessCandidate[], classifications: Map<string, Classification>) {
+type ScoreContext = {
+  weights: Parameters<typeof scoreLead>[1];
+  zonePriority: string | null;
+  categoryPriority: string | null;
+};
+
+async function toResults(
+  candidates: BusinessCandidate[],
+  classifications: Map<string, Classification>,
+  scoreContext: ScoreContext
+) {
   if (candidates.length === 0) return [];
 
   const leadPlaceIds = candidates.map((candidate) => toLeadPlaceId(candidate.providerPlaceId));
@@ -155,6 +179,20 @@ async function toResults(candidates: BusinessCandidate[], classifications: Map<s
   return candidates.map((candidate) => {
     const lead = savedByPlaceId.get(toLeadPlaceId(candidate.providerPlaceId));
     const phone = normalizePhilippineMobileNumber(candidate.phoneNumber);
+    const classification = classifications.get(candidate.providerPlaceId) as Classification;
+
+    const score = scoreLead(
+      {
+        classification,
+        phoneNumber: candidate.phoneNumber,
+        websiteUrl: candidate.websiteUrl,
+        rating: candidate.rating,
+        reviewCount: candidate.userRatingCount,
+        zonePriority: scoreContext.zonePriority,
+        categoryPriority: scoreContext.categoryPriority
+      },
+      scoreContext.weights
+    );
 
     return {
       providerPlaceId: candidate.providerPlaceId,
@@ -170,7 +208,8 @@ async function toResults(candidates: BusinessCandidate[], classifications: Map<s
       reviewCount: candidate.userRatingCount,
       businessStatus: candidate.businessStatus,
       googleMapsUri: candidate.googleMapsUri,
-      classification: classifications.get(candidate.providerPlaceId) as Classification,
+      classification,
+      score,
       savedLeadId: lead?.id ?? null,
       alreadyContacted: Boolean(lead && (lead.smsLogs.length > 0 || lead.emailLogs.length > 0)),
       doNotContact: Boolean(phone && suppressedPhones.has(phone))

@@ -31,6 +31,23 @@ const resultSchema = z.object({
     matchedBrandId: z.number().nullable(),
     matchedBrandName: z.string().nullable()
   }),
+  score: z
+    .object({
+      version: z.string(),
+      total: z.number(),
+      band: z.string(),
+      factors: z.array(
+        z.object({
+          key: z.string(),
+          label: z.string(),
+          points: z.number(),
+          max: z.number(),
+          unknown: z.boolean(),
+          evidence: z.array(z.string())
+        })
+      )
+    })
+    .optional(),
   savedLeadId: z.number().nullable(),
   alreadyContacted: z.boolean(),
   doNotContact: z.boolean()

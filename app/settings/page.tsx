@@ -3,11 +3,14 @@ import { DebugSettingsPanel } from "@/components/DebugSettingsPanel";
 import { EmailTemplateSettingsForm } from "@/components/EmailTemplateSettingsForm";
 import { OperationsSettingsForm } from "@/components/OperationsSettingsForm";
 import { SettingPanelHeader } from "@/components/SettingPanelHeader";
+import { SmeSettingsForm } from "@/components/SmeSettingsForm";
 import { SmsTemplateSettingsForm } from "@/components/SmsTemplateSettingsForm";
 import { getDebugSettings } from "@/lib/debug-settings";
 import { getEmailBodyTemplate, getEmailTemplateAttachmentMetadata } from "@/lib/email-template";
+import { isSmeSearchEnabled } from "@/lib/feature-flags";
 import { getOperationsSettings } from "@/lib/operations-settings";
 import { getSmsBodyTemplate } from "@/lib/sms-template";
+import { getSmeSettings } from "@/lib/sme/settings";
 import { prisma } from "@/lib/prisma";
 import { requirePageAdmin } from "@/lib/require-auth";
 
@@ -24,6 +27,12 @@ export default async function SettingsPage() {
   const smsBodyTemplate = await getSmsBodyTemplate();
   const operationsSettings = await getOperationsSettings();
   const debugSettings = await getDebugSettings();
+  const smeSettings = await getSmeSettings();
+  const smeEnabled = await isSmeSearchEnabled();
+  const [zoneCount, brandCount] = await Promise.all([
+    prisma.smeSearchZone.count(),
+    prisma.franchiseBrand.count()
+  ]);
   return (
     <section className="stack">
       <div className="page-title">
@@ -33,6 +42,13 @@ export default async function SettingsPage() {
       <OperationsSettingsForm settings={operationsSettings} />
       <EmailTemplateSettingsForm initialBody={emailBodyTemplate} initialAttachment={emailTemplateAttachment} />
       <SmsTemplateSettingsForm initialBody={smsBodyTemplate} />
+      <SmeSettingsForm
+        enabled={smeEnabled}
+        weights={smeSettings.weights}
+        thresholds={smeSettings.thresholds}
+        zoneCount={zoneCount}
+        brandCount={brandCount}
+      />
       <DeleteLeadsButton leadCount={leadCount} />
       <DebugSettingsPanel settings={debugSettings} />
       <div className="panel settings-config-panel">

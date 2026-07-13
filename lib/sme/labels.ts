@@ -13,6 +13,14 @@ export function smeClassLabel(value: string) {
   return classLabels[value] ?? value;
 }
 
+/** S/A/B/C/Low, coloured so the eye lands on the leads worth calling first. */
+export function scoreBandPillClassName(band: string) {
+  if (band === "S" || band === "A") return "status-pill status-pill-success";
+  if (band === "B") return "status-pill status-pill-neutral";
+  if (band === "C") return "status-pill status-pill-warning";
+  return "status-pill status-pill-muted";
+}
+
 /** Maps a class onto the existing status-pill styles. */
 export function smeClassPillClassName(value: string) {
   if (value === "INDEPENDENT_SME" || value === "LOCAL_SME_CHAIN" || value === "MANUAL_INCLUDE") {

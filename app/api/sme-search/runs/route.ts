@@ -16,6 +16,7 @@ const schema = z.object({
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
   radiusMeters: z.number().int().min(50).max(50000).optional(),
+  zonePriority: z.enum(["A+", "A", "B+", "B", "C"]).optional(),
   // Capped deliberately: every result costs a Places request at the details stage.
   maxResults: z.number().int().min(1).max(60).optional(),
   filters: z

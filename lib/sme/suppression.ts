@@ -17,6 +17,18 @@ export type RecipientScreening = {
 };
 
 /**
+ * All actively suppressed SMS numbers. Used by the exports: a phone list handed to anyone
+ * for outreach must not carry a number that has opted out (work order 12.5).
+ */
+export async function getSuppressedPhones() {
+  const entries = await prisma.doNotContact.findMany({
+    where: { channel: "sms", active: true },
+    select: { normalizedContact: true }
+  });
+  return new Set(entries.map((entry) => entry.normalizedContact));
+}
+
+/**
  * Screens recipients before any SMS is sent (work order 8.2, 13.2).
  *
  * This runs on the server, inside the send route, not only in the UI — a suppression check
