@@ -4,6 +4,7 @@ import { AutomationStatusBar } from "@/components/AutomationStatusBar";
 import { Sidebar } from "@/components/Sidebar";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { getAutomationStatus } from "@/lib/auto-email";
+import { isSmeSearchEnabled } from "@/lib/feature-flags";
 import "./globals.css";
 
 const inter = Inter({
@@ -19,12 +20,13 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const isAuthenticated = await isAdminAuthenticated();
   const automationStatus = isAuthenticated ? await getAutomationStatus() : null;
+  const smeSearchEnabled = isAuthenticated ? await isSmeSearchEnabled() : false;
 
   return (
     <html lang="en">
       <body className={inter.className}>
         <div className={isAuthenticated ? "app-shell" : "app-shell app-shell-public"}>
-          {isAuthenticated ? <Sidebar /> : null}
+          {isAuthenticated ? <Sidebar smeSearchEnabled={smeSearchEnabled} /> : null}
           <main>
             {isAuthenticated ? <AutomationStatusBar initialStatus={automationStatus} /> : null}
             {children}

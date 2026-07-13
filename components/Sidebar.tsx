@@ -3,6 +3,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+const smeSearchNavItem = {
+  href: "/sme-search",
+  label: "SME Search",
+  icon: (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3" />
+      <path d="M8 13V9" />
+      <path d="M11 13V8" />
+      <path d="M14 13v-3" />
+    </svg>
+  )
+};
+
 const navGroups = [
   {
     label: "Dashboards",
@@ -121,14 +135,22 @@ function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function Sidebar() {
+export function Sidebar({ smeSearchEnabled = false }: { smeSearchEnabled?: boolean }) {
   const pathname = usePathname();
+
+  const groups = navGroups.map((group) => {
+    if (group.label !== "General" || !smeSearchEnabled) return group;
+    const leadsIndex = group.items.findIndex((item) => item.href === "/leads");
+    const items = [...group.items];
+    items.splice(leadsIndex + 1, 0, smeSearchNavItem);
+    return { ...group, items };
+  });
 
   return (
     <aside className="sidebar">
       <Link href="/" className="brand">Lead Collection</Link>
       <nav className="sidebar-nav">
-        {navGroups.map((group) => (
+        {groups.map((group) => (
           <div className="sidebar-group" key={group.label}>
             <div className="sidebar-group-label">{group.label}</div>
             {group.items.map((item) => (
