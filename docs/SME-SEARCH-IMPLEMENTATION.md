@@ -10,7 +10,7 @@ Branch: `feature/sme-search-integration`
 - [x] **Phase 0** — Baseline, branch, feature flag
 - [x] **Phase 1** — Google Places (New) adapter + internal search domain
 - [x] **Phase 2** — Additive schema, search-zone importer, franchise import template
-- [ ] **Phase 3** — Name normalization, franchise exclusion, classification, dedupe
+- [x] **Phase 3** — Name normalization, franchise exclusion, classification, dedupe
 - [ ] **Phase 4** — SME Search UI
 - [ ] **Phase 5** — Save as lead + existing SMS composer integration
 - [ ] **Phase 6** — Lead score, statuses, admin controls
@@ -130,6 +130,58 @@ re-import reported 12/48 unchanged and created nothing.
 6.2 no list is seeded silently — an administrator must review it before import. The zone
 template's coordinates are approximate and should be verified against the actual
 Metro_Manila_Major_Commercial_Roads file when it is provided.
+
+## Classification (Phase 3)
+
+Classes: `INDEPENDENT_SME`, `LOCAL_SME_CHAIN`, `MANUAL_REVIEW`, `LARGE_CHAIN`,
+`FRANCHISE_EXCLUDED`, `MANUAL_INCLUDE`, `MANUAL_EXCLUDE`. Only Independent, Local SME Chain
+and Manual Include may enter bulk outreach — `MANUAL_REVIEW` is shown but never bulk-contacted
+until a human decides.
+
+Thresholds (configurable): 1 observed location = Independent, 2–5 = Local SME Chain,
+6–9 = Manual Review, 10+ = Large Chain, blacklist hit = Franchise Excluded.
+
+Every classification carries **reason codes with human-readable evidence**, so an exclusion
+is never unexplained, and a manual override records the previous value without overwriting
+the automatic one.
+
+### Three things the live data forced into the design
+
+**1. Shared domains cannot imply a shared brand.** A live search of Aguirre Avenue found
+three of six independent cafes listing a `facebook.com` or `instagram.com` page as their
+"website". Since every Facebook page has the host `facebook.com`, a naive domain-cluster
+rule would fuse them into one phantom chain — and at scale, a 10+ location `LARGE_CHAIN`
+that gets auto-excluded. These are precisely the SMEs worth contacting: no real website is
+a *reason to call*, not a reason to skip. See `lib/sme/shared-domains.ts`.
+
+**2. Suffix stripping alone misses real chains.** A live Makati search returned
+"Nihon Cafe - Concept" and "Nihon Cafe Bel Air" as two independents, because "Bel Air" is a
+barangay that no static location-word list contained. `resolveBrandAliases` now collapses a
+brand candidate onto any *complete token prefix* of itself, which catches Nihon Cafe while
+still keeping "Cafe de Lipa" and "Cafe de Manila" apart (neither is a prefix of the other).
+
+**3. Branch counts are evidence, not truth.** We can only count branches a search actually
+returned, so `branchCount` is a floor. A single observed location scores low confidence
+(65, or 45 when the name carries a branch label) and says so in its reason codes.
+`loadPriorBranchCounts` folds in locations already stored from earlier searches.
+
+### Live verification (13 Jul 2026)
+
+Run against the real Google API with the 48 franchise brands loaded in the database:
+
+- **Franchise exclusion:** "Wendy's - Makati Avenue" excluded via alias match on `wendys`,
+  with reason shown. **Zero false positives** among the 19 independents kept in the same run.
+- **Local chain retained:** "Panco Cafe - Legazpi Makati" + "Panco Cafe - One Ayala" and
+  "Nihon Cafe - Concept" + "Nihon Cafe Bel Air" both correctly kept as `LOCAL_SME_CHAIN`,
+  not excluded.
+- **No false merge:** "Pancho Cafe Makati" stayed separate from "Panco Cafe".
+- **No phantom chain:** independents whose only web presence is Instagram/Facebook each
+  stayed `INDEPENDENT_SME` with branch count 1.
+
+Dedupe merges automatically on place ID, then normalized phone, then owned domain + brand
+name. A near-identical name within 150 m is deliberately **flagged for review, not merged** —
+two different tenants would otherwise be silently collapsed, and a merge is far harder to
+undo than a review.
 
 ## Baseline (recorded before any change, commit `9ea91cc`)
 
