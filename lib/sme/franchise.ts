@@ -19,10 +19,30 @@ export type FranchiseMatch = {
   canonicalName: string;
   classification: string;
   /** How the match was made — shown to the user so an exclusion is never unexplained. */
-  matchedOn: "DOMAIN" | "EXACT_NAME" | "BRAND_CANDIDATE";
+  matchedOn: "DOMAIN" | "EXACT_NAME" | "BRAND_CANDIDATE" | "NAME_PREFIX";
   matchedValue: string;
   confidence: number;
 };
+
+/**
+ * True when every token of `brand` opens `name`, in order.
+ *
+ * Branch-suffix stripping cannot save us here: it relies on a finite list of location words,
+ * and Metro Manila branch names are unbounded. A live search returned "Starbucks San Antonio
+ * Paranaque", which strips only to "starbucks san antonio" because "Antonio" is in no list —
+ * so the name never matched, and Starbucks was caught only by its domain, after we had
+ * already paid for its contact details. "Jollibee SM Sucat" would have escaped entirely.
+ *
+ * Matching on whole tokens (not substrings) is what makes this safe: "Benchmark Fitness"
+ * does not start with the token "bench", and "Old McDonald's Farm Supply" does not *start*
+ * with "mcdonalds".
+ */
+function isTokenPrefix(brand: string, name: string) {
+  const brandTokens = brand.split(" ").filter(Boolean);
+  const nameTokens = name.split(" ").filter(Boolean);
+  if (brandTokens.length === 0 || brandTokens.length >= nameTokens.length) return false;
+  return brandTokens.every((token, index) => nameTokens[index] === token);
+}
 
 function splitList(value: string) {
   return value
@@ -93,6 +113,23 @@ export function matchFranchise(
         matchedOn: "BRAND_CANDIDATE",
         matchedValue: brandCandidateName,
         confidence: 80
+      };
+    }
+  }
+
+  // Last resort: the brand opens the name, and whatever follows is an unrecognized branch
+  // label. Scored below the other signals because it is the most fallible.
+  for (const rule of activeRules) {
+    const aliases = splitList(rule.normalizedAliases);
+    const hit = aliases.find((alias) => isTokenPrefix(alias, normalizedName));
+    if (hit) {
+      return {
+        brandId: rule.id,
+        canonicalName: rule.canonicalName,
+        classification: rule.classification,
+        matchedOn: "NAME_PREFIX",
+        matchedValue: hit,
+        confidence: 85
       };
     }
   }

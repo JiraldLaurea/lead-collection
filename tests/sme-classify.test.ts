@@ -111,11 +111,35 @@ describe("franchise matching", () => {
     expect(match).toMatchObject({ canonicalName: "Starbucks", matchedOn: "BRAND_CANDIDATE", confidence: 80 });
   });
 
-  // The false positives that would wrongly exclude a real prospect.
+  it("matches a franchise whose branch label is in no location list", () => {
+    // Live case: "Antonio" is not a location word, so suffix stripping leaves
+    // "starbucks san antonio" and the name never matched. Only the domain caught it — after
+    // we had already paid for the contact details.
+    const match = matchFranchise({ displayName: "Starbucks San Antonio Paranaque" }, rules);
+    expect(match).toMatchObject({ canonicalName: "Starbucks", matchedOn: "NAME_PREFIX", confidence: 85 });
+  });
+
+  it("matches a franchise branch that publishes no website at all", () => {
+    // Without prefix matching this escapes entirely: no domain, and "Sucat" is in no list.
+    expect(matchFranchise({ displayName: "Jollibee SM Sucat" }, rules)?.canonicalName).toBe("Jollibee");
+  });
+
+  // The false positives that would wrongly exclude a real prospect. Whole-token matching is
+  // what keeps prefix matching safe.
   it("does NOT match a different business whose name merely contains a brand", () => {
     expect(matchFranchise({ displayName: "Bobby's Coffee House" }, rules)).toBeNull();
     expect(matchFranchise({ displayName: "Benchmark Fitness" }, rules)).toBeNull();
     expect(matchFranchise({ displayName: "Old McDonald's Farm Supply" }, rules)).toBeNull();
+  });
+
+  it("does NOT let a brand prefix-match a longer word", () => {
+    // "bench" must not open "benchmark": tokens are compared whole, never as substrings.
+    expect(matchFranchise({ displayName: "Benchmark Fitness Makati" }, rules)).toBeNull();
+    expect(matchFranchise({ displayName: "Boscoffee Roasters" }, rules)).toBeNull();
+  });
+
+  it("does NOT match when the brand appears somewhere other than the start", () => {
+    expect(matchFranchise({ displayName: "The Old Jollibee Site Cafe" }, rules)).toBeNull();
   });
 
   it("does NOT treat a Facebook page as a franchise domain", () => {

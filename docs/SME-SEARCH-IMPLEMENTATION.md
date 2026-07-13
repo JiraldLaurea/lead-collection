@@ -11,7 +11,7 @@ Branch: `feature/sme-search-integration`
 - [x] **Phase 1** — Google Places (New) adapter + internal search domain
 - [x] **Phase 2** — Additive schema, search-zone importer, franchise import template
 - [x] **Phase 3** — Name normalization, franchise exclusion, classification, dedupe
-- [ ] **Phase 4** — SME Search UI
+- [x] **Phase 4** — SME Search UI
 - [ ] **Phase 5** — Save as lead + existing SMS composer integration
 - [ ] **Phase 6** — Lead score, statuses, admin controls
 - [ ] **Phase 7** — Stabilization, security review, acceptance
@@ -183,32 +183,81 @@ name. A near-identical name within 150 m is deliberately **flagged for review, n
 two different tenants would otherwise be silently collapsed, and a merge is far harder to
 undo than a review.
 
+## SME Search UI (Phase 4)
+
+`/sme-search`, feature-flagged, reusing the existing design system (`leads-table`,
+`table-frame`, MUI `Checkbox`, `LoadingModal`, `Snackbar`, `TableStatusRow`).
+
+Four modes: commercial road (from imported zones), city + category, map radius, free text.
+Filters: rating, review-count range, has phone, has website, SME only, exclude Do Not
+Contact, exclude previously contacted. Summary chips show found / qualified / need review /
+excluded / already saved / possible duplicates. The detail drawer shows the classification,
+confidence, observed locations, matched franchise, and **every reason code with its
+evidence**, so no exclusion is a black box.
+
+Repeated clicks cannot spend a second round of API calls (in-flight guard), and starting a
+new search aborts the previous one rather than racing it.
+
+### Staged cost control, and the gap live testing exposed
+
+`POST /api/sme-search/runs` screens franchises on **discovery data alone**, then fetches
+contact details only for the survivors — Google bills per request, so we must not pay for
+the phone number of a McDonald's we are about to discard.
+
+The first live run showed this only half-working. "Starbucks San Antonio Paranaque" was
+*not* caught by name (suffix stripping leaves "starbucks san antonio", because "Antonio" is
+in no location list), so it survived screening, we paid for its details, and only then did
+the `starbucks.ph` domain expose it. Worse, **"Jollibee SM Sucat" would have escaped
+entirely** — no website domain, and "Sucat" is in no list either.
+
+Fixed by matching a franchise when its name is a **complete token prefix** of the business
+name (`NAME_PREFIX`, confidence 85). Whole-token comparison is what keeps this safe:
+"Benchmark Fitness" does not start with the token `bench`, and "Old McDonald's Farm Supply"
+does not *start* with `mcdonalds`. Re-ran live: Starbucks is now excluded at the screening
+stage with its contact details never fetched.
+
+### Live verification (13 Jul 2026)
+
+Aguirre Avenue, BF Homes, cafés, 500 m — through the real API route as the UI calls it:
+
+- 12 results → **11 qualified, 1 excluded** (Starbucks), 0 needing review.
+- Starbucks excluded via `FRANCHISE_NAME_PREFIX_MATCH`, contact details **never fetched**.
+- Every independent kept, including those whose only web presence is a Facebook page.
+- Flag **off**: `/sme-search` returns 404, `POST /api/sme-search/runs` returns 404, and the
+  nav item is absent. The application behaves exactly as before.
+- The Google API key appears in **zero** files under `.next/static/` — it never reaches the
+  browser.
+
 ## Baseline (recorded before any change, commit `9ea91cc`)
 
-| Check | Committed `HEAD` | Working tree at start of Phase 0 |
-| --- | --- | --- |
-| `npm run typecheck` | pass | pass |
-| `npm run lint` | pass | pass |
-| `npm test` | pass (3 tests) | pass (3 tests) |
-| `npm run build` | **pass** | **FAILS** |
+| Check | Result |
+| --- | --- |
+| `npm run typecheck` | pass |
+| `npm run lint` | pass |
+| `npm test` | pass (3 tests at baseline; 112 after Phase 4) |
+| `npm run build` | pass |
 
-### Pre-existing build failure (not caused by this work)
+### Correction: the "pre-existing build failure" was a false alarm
 
-`npm run build` fails in the working tree while prerendering `/`:
+Phase 0 recorded that `npm run build` failed in the working tree while prerendering `/`:
 
 ```
 TypeError: Cannot read properties of undefined (reading 'call')
-Error occurred prerendering page "/"
 ```
 
-Confirmed pre-existing by building the committed `HEAD` in a clean worktree, which
-succeeds. The failure comes from the uncommitted hosted-deployment work in progress
-(`lib/prisma.ts` libSQL/Turso adapter + `next.config.ts` `serverExternalPackages`),
-which makes the Prisma client unavailable during static prerender of the dashboard.
+and attributed it to the uncommitted Turso/libSQL work. **That diagnosis was wrong.**
 
-Per the work order's safe-change rules, unrelated pre-existing issues are recorded,
-not fixed. **This must be resolved before Phase 7 acceptance**, since acceptance
-requires a passing build.
+The real cause is that `next build` and `next dev` share one `.next` directory. Two dev
+servers were running during the Phase 0 build, and a build into the same directory clobbers
+the webpack runtime chunks — producing exactly this error. The clean-worktree build appeared
+to "prove" the theory only because it had its own `.next`.
+
+With every dev server stopped and `.next` removed, `npm run build` **passes**, including
+`/sme-search`. There is no pre-existing build failure and nothing to fix before Phase 7.
+
+**Operational note:** do not run `npm run build` while a dev server is running on this
+project, and do not run two dev servers from the same directory. Both corrupt `.next` and
+produce misleading `Cannot read properties of undefined (reading 'call')` errors at runtime.
 
 ## Rollback
 

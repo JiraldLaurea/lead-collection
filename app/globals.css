@@ -1598,6 +1598,12 @@ table {
   color: #475569;
 }
 
+.status-pill-warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: var(--warning);
+}
+
 .status-pill-neutral {
   border-color: #bfdbfe;
   background: #eff6ff;
@@ -2293,4 +2299,114 @@ th {
   .detail-row strong {
     text-align: left;
   }
+}
+
+/* ── SME Search ───────────────────────────────────────────────────────────── */
+
+.sme-search-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.sme-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.sme-summary-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sme-summary-chip strong {
+  font-size: 14px;
+  color: var(--text);
+}
+
+.sme-contact-icons {
+  display: inline-flex;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sme-contact-icons .present {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.sme-detail-modal {
+  max-width: 640px;
+}
+
+.sme-reason-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.sme-reason-list li {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--background);
+}
+
+.sme-reason-list code {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.sme-reason-list p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.sme-evidence {
+  margin-top: 16px;
+}
+
+a.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+a.button:hover {
+  background: var(--background);
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.inline-check input {
+  width: auto;
+  margin: 0;
 }
