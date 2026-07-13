@@ -2,6 +2,7 @@ import { LeadSelectionTable } from "@/components/LeadSelectionTable";
 import { PageSnackbar } from "@/components/PageSnackbar";
 import { SearchForm } from "@/components/SearchForm";
 import { getEmailBodyTemplate } from "@/lib/email-template";
+import { getSmsBodyTemplate } from "@/lib/sms-template";
 import { prisma } from "@/lib/prisma";
 import { buildLeadWhere, parseLeadFilters } from "@/lib/leads";
 import { requirePageAdmin } from "@/lib/require-auth";
@@ -46,6 +47,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const phoneFilterValue = filters.hasPhone === true ? "true" : filters.hasPhone === false ? "false" : "";
   const emailFilterValue = filters.hasEmail === true ? "true" : filters.hasEmail === false ? "false" : "";
   const emailBodyTemplate = await getEmailBodyTemplate();
+  const smsBodyTemplate = await getSmsBodyTemplate();
   return (
     <section className="stack leads-page">
       <div className="page-title">
@@ -70,6 +72,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         phoneFilterValue={phoneFilterValue}
         emailFilterValue={emailFilterValue}
         emailBodyTemplate={emailBodyTemplate}
+        smsBodyTemplate={smsBodyTemplate}
         totalCount={totalLeads}
         currentPage={currentPage}
         pageSize={pageSize}

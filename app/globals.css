@@ -771,6 +771,24 @@ a {
   min-height: 320px;
 }
 
+/* An SMS is a fraction of the length of an email, so it does not need the tall email box. */
+.sms-template-textarea {
+  min-height: 120px;
+}
+
+.sms-template-preview {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .settings-config-panel {
   padding: 0;
 }

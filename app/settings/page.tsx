@@ -3,9 +3,11 @@ import { DebugSettingsPanel } from "@/components/DebugSettingsPanel";
 import { EmailTemplateSettingsForm } from "@/components/EmailTemplateSettingsForm";
 import { OperationsSettingsForm } from "@/components/OperationsSettingsForm";
 import { SettingPanelHeader } from "@/components/SettingPanelHeader";
+import { SmsTemplateSettingsForm } from "@/components/SmsTemplateSettingsForm";
 import { getDebugSettings } from "@/lib/debug-settings";
 import { getEmailBodyTemplate, getEmailTemplateAttachmentMetadata } from "@/lib/email-template";
 import { getOperationsSettings } from "@/lib/operations-settings";
+import { getSmsBodyTemplate } from "@/lib/sms-template";
 import { prisma } from "@/lib/prisma";
 import { requirePageAdmin } from "@/lib/require-auth";
 
@@ -19,16 +21,18 @@ export default async function SettingsPage() {
   const leadCount = await prisma.lead.count();
   const emailBodyTemplate = await getEmailBodyTemplate();
   const emailTemplateAttachment = await getEmailTemplateAttachmentMetadata();
+  const smsBodyTemplate = await getSmsBodyTemplate();
   const operationsSettings = await getOperationsSettings();
   const debugSettings = await getDebugSettings();
   return (
     <section className="stack">
       <div className="page-title">
         <h1>Settings</h1>
-        <p>Manage email defaults, saved lead data, and internal configuration.</p>
+        <p>Manage email and SMS defaults, saved lead data, and internal configuration.</p>
       </div>
       <OperationsSettingsForm settings={operationsSettings} />
       <EmailTemplateSettingsForm initialBody={emailBodyTemplate} initialAttachment={emailTemplateAttachment} />
+      <SmsTemplateSettingsForm initialBody={smsBodyTemplate} />
       <DeleteLeadsButton leadCount={leadCount} />
       <DebugSettingsPanel settings={debugSettings} />
       <div className="panel settings-config-panel">

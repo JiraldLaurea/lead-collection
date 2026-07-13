@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { LoadingModal } from "@/components/LoadingModal";
 import { Snackbar } from "@/components/Snackbar";
 import { emailSubjectTemplate } from "@/lib/email-template-defaults";
-import { defaultSmsBodyTemplate } from "@/lib/sms-template-defaults";
 
 export type CsvLeadRow = {
   id: number;
@@ -24,7 +23,7 @@ export type CsvLeadRow = {
   import: { fileName: string; importedAt: Date | string };
 };
 
-type Props = { leads: CsvLeadRow[]; emailBodyTemplate: string };
+type Props = { leads: CsvLeadRow[]; emailBodyTemplate: string; smsBodyTemplate: string };
 
 type EmailProgressEvent = {
   type: "progress";
@@ -35,7 +34,7 @@ type EmailProgressEvent = {
   error?: string;
 };
 
-export function CsvLeadWorkspace({ leads, emailBodyTemplate }: Props) {
+export function CsvLeadWorkspace({ leads, emailBodyTemplate, smsBodyTemplate }: Props) {
   const router = useRouter();
   const fileInputId = useId();
   const attachmentInputId = useId();
@@ -52,7 +51,7 @@ export function CsvLeadWorkspace({ leads, emailBodyTemplate }: Props) {
   const [showSmsModal, setShowSmsModal] = useState(false);
   const [emailSubject, setEmailSubject] = useState(emailSubjectTemplate);
   const [emailBody, setEmailBody] = useState(emailBodyTemplate);
-  const [smsBody, setSmsBody] = useState(defaultSmsBodyTemplate);
+  const [smsBody, setSmsBody] = useState(smsBodyTemplate);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
   const [noticeType, setNoticeType] = useState<"success" | "error">("success");
@@ -311,7 +310,7 @@ export function CsvLeadWorkspace({ leads, emailBodyTemplate }: Props) {
           <div className="compose-recipients"><span>Recipients</span><strong>{smsLeads.length} lead{smsLeads.length === 1 ? "" : "s"} with valid Philippine mobile numbers</strong></div>
           <label>Message<textarea ref={smsTextareaRef} value={smsBody} onChange={(event) => setSmsBody(event.target.value)} rows={6} maxLength={1000} /></label>
           <div className="settings-template-helper"><button type="button" className="secondary compact-button" onClick={() => insertPlaceholder("sms")}>Add [business_name]</button><span className="field-note">{smsBody.length}/1000 characters</span></div>
-          <div className="compose-modal-actions"><button type="button" className="secondary" onClick={() => setSmsBody(defaultSmsBodyTemplate)}>Reset</button><div className="compose-modal-action-group"><button type="button" className="secondary" onClick={() => setShowSmsModal(false)}>Cancel</button><button type="button" disabled={!smsBody.trim()} onClick={sendSmsMessages}>Send SMS</button></div></div>
+          <div className="compose-modal-actions"><button type="button" className="secondary" onClick={() => setSmsBody(smsBodyTemplate)}>Reset</button><div className="compose-modal-action-group"><button type="button" className="secondary" onClick={() => setShowSmsModal(false)}>Cancel</button><button type="button" disabled={!smsBody.trim()} onClick={sendSmsMessages}>Send SMS</button></div></div>
         </ComposeModal>
       ) : null}
     </div>

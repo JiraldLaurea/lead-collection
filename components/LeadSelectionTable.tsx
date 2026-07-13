@@ -8,7 +8,6 @@ import { LoadingModal } from "@/components/LoadingModal";
 import { Snackbar } from "@/components/Snackbar";
 import { TableStatusRow } from "@/components/TableStatusRow";
 import { emailSubjectTemplate } from "@/lib/email-template-defaults";
-import { defaultSmsBodyTemplate } from "@/lib/sms-template-defaults";
 import { fetchWithTimeout, isAbortError } from "@/lib/fetch-timeout";
 import { emailStatusPillClassName, formatCategoryLabel, formatCity, formatDateTime, formatEmailStatus } from "@/lib/format";
 import type { LeadFilters } from "@/lib/leads";
@@ -35,6 +34,7 @@ type LeadSelectionTableProps = {
   phoneFilterValue: string;
   emailFilterValue: string;
   emailBodyTemplate: string;
+  smsBodyTemplate: string;
   totalCount: number;
   currentPage: number;
   pageSize: number;
@@ -49,6 +49,7 @@ export function LeadSelectionTable({
   phoneFilterValue,
   emailFilterValue,
   emailBodyTemplate,
+  smsBodyTemplate,
   totalCount,
   currentPage,
   pageSize,
@@ -68,7 +69,7 @@ export function LeadSelectionTable({
   const [emailNoticeType, setEmailNoticeType] = useState<"success" | "error">("success");
   const [sendingSms, setSendingSms] = useState(false);
   const [showSmsModal, setShowSmsModal] = useState(false);
-  const [smsBody, setSmsBody] = useState(defaultSmsBodyTemplate);
+  const [smsBody, setSmsBody] = useState(smsBodyTemplate);
   const downloadMenuRef = useRef<HTMLDetailsElement>(null);
   const emailBodyTextareaRef = useRef<HTMLTextAreaElement>(null);
   const smsBodyTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -257,7 +258,7 @@ export function LeadSelectionTable({
   }
 
   function resetSmsTemplate() {
-    setSmsBody(defaultSmsBodyTemplate);
+    setSmsBody(smsBodyTemplate);
   }
 
   function insertSmsBusinessNamePlaceholder() {
