@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { applySmeSchemaToTurso, smeDdl } from "./sme-schema.mjs";
 
 const dataDir = path.join(process.cwd(), "data");
 fs.mkdirSync(dataDir, { recursive: true });
@@ -180,5 +181,19 @@ addSmsLogColumn("delivery_receipt", "delivery_receipt TEXT");
 addSmsLogColumn("delivered_at", "delivered_at DATETIME");
 db.exec("CREATE INDEX IF NOT EXISTS sms_logs_delivery_status_idx ON sms_logs(delivery_status)");
 
+// SME Search tables. Additive and idempotent: existing tables and rows are untouched.
+for (const statement of smeDdl) {
+  db.exec(statement);
+}
+
 db.close();
 console.log(`SQLite database initialized at ${dbPath}`);
+
+// Hosted environments run on Turso. Without this the local file and the hosted database
+// drift, and the SME tables would be missing in production while local tests pass.
+const appliedToTurso = await applySmeSchemaToTurso(smeDdl);
+console.log(
+  appliedToTurso
+    ? "SME schema applied to Turso database"
+    : "Turso not configured; skipped remote schema apply"
+);

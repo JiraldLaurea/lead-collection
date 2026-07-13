@@ -33,6 +33,9 @@ model Lead {
   updatedAt       DateTime @updatedAt @map("updated_at")
   emailLogs       EmailLog[]
   smsLogs         SmsLog[]
+  smeProfiles     SmeBusinessProfile[]
+  activities      ContactActivity[]
+  leadListItems   LeadListItem[]
 
   @@index([searchKeyword])
   @@index([searchLocation])
@@ -135,6 +138,224 @@ model SmsLog {
   @@index([status])
   @@index([deliveryStatus])
   @@map("sms_logs")
+}
+
+// ---------------------------------------------------------------------------
+// SME Search (QROAD work order). All models below are additive: the existing
+// `leads` table remains the lead store, and an SmeBusinessProfile links to it
+// via a nullable leadId once the user explicitly saves a candidate.
+// ---------------------------------------------------------------------------
+
+model SmeSearchZone {
+  id             Int       @id @default(autoincrement())
+  city           String
+  commercialArea String    @map("commercial_area")
+  roadName       String    @map("road_name")
+  latitude       Float?
+  longitude      Float?
+  radiusMeters   Int       @default(500) @map("radius_meters")
+  priority       String    @default("B")
+  enabled        Boolean   @default(true)
+  lastScannedAt  DateTime? @map("last_scanned_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@unique([city, commercialArea, roadName])
+  @@index([enabled])
+  @@map("sme_search_zones")
+}
+
+model SmeSearchRun {
+  id                Int       @id @default(autoincrement())
+  mode              String
+  parameters        String
+  status            String
+  totalCount        Int       @default(0) @map("total_count")
+  qualifiedCount    Int       @default(0) @map("qualified_count")
+  manualReviewCount Int       @default(0) @map("manual_review_count")
+  excludedCount     Int       @default(0) @map("excluded_count")
+  errorCode         String?   @map("error_code")
+  errorMessage      String?   @map("error_message")
+  startedAt         DateTime  @map("started_at")
+  completedAt       DateTime? @map("completed_at")
+
+  @@index([status])
+  @@index([startedAt])
+  @@map("sme_search_runs")
+}
+
+model SmePlaceReference {
+  id              Int       @id @default(autoincrement())
+  provider        String    @default("google_places")
+  providerPlaceId String    @unique @map("provider_place_id")
+  sourceQuery     String?   @map("source_query")
+  firstSeenAt     DateTime  @default(now()) @map("first_seen_at")
+  lastFetchedAt   DateTime? @map("last_fetched_at")
+
+  @@map("sme_place_references")
+}
+
+model SmeBusinessProfile {
+  id                 Int       @id @default(autoincrement())
+  providerPlaceId    String    @unique @map("provider_place_id")
+  leadId             Int?      @map("lead_id")
+  displayName        String    @map("display_name")
+  normalizedName     String    @map("normalized_name")
+  brandCandidateName String?   @map("brand_candidate_name")
+  branchLabel        String?   @map("branch_label")
+  internalCategory   String?   @map("internal_category")
+  primaryType        String?   @map("primary_type")
+  city               String?
+  commercialArea     String?   @map("commercial_area")
+  formattedAddress   String?   @map("formatted_address")
+  latitude           Float?
+  longitude          Float?
+  phoneNumber        String?   @map("phone_number")
+  websiteUrl         String?   @map("website_url")
+  websiteHost        String?   @map("website_host")
+  rating             Float?
+  reviewCount        Int?      @map("review_count")
+  businessStatus     String?   @map("business_status")
+  googleMapsUrl      String?   @map("google_maps_url")
+  detailsFetched     Boolean   @default(false) @map("details_fetched")
+  dataSource         String    @default("google_places") @map("data_source")
+  sourceQuery        String?   @map("source_query")
+  collectedAt        DateTime  @default(now()) @map("collected_at")
+  lastFetchedAt      DateTime? @map("last_fetched_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  lead           Lead?              @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  classification SmeClassification?
+  scores         SmeLeadScore[]
+  activities     ContactActivity[]
+  leadListItems  LeadListItem[]
+
+  @@index([leadId])
+  @@index([normalizedName])
+  @@index([phoneNumber])
+  @@index([websiteHost])
+  @@map("sme_business_profiles")
+}
+
+model SmeClassification {
+  id              Int       @id @default(autoincrement())
+  businessId      Int       @unique @map("business_id")
+  autoClass       String    @map("auto_class")
+  effectiveClass  String    @map("effective_class")
+  confidence      Float     @default(0)
+  reasonCodes     String    @default("[]") @map("reason_codes")
+  branchCount     Int?      @map("branch_count")
+  matchedBrandId  Int?      @map("matched_brand_id")
+  previousClass   String?   @map("previous_class")
+  overrideBy      String?   @map("override_by")
+  overrideReason  String?   @map("override_reason")
+  overriddenAt    DateTime? @map("overridden_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  business SmeBusinessProfile @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([effectiveClass])
+  @@map("sme_classifications")
+}
+
+model FranchiseBrand {
+  id               Int      @id @default(autoincrement())
+  canonicalName    String   @unique @map("canonical_name")
+  normalizedName   String   @map("normalized_name")
+  aliases          String   @default("")
+  normalizedAliases String  @default("") @map("normalized_aliases")
+  officialDomains  String   @default("") @map("official_domains")
+  category         String?
+  scope            String   @default("PH")
+  classification   String   @default("KNOWN_FRANCHISE")
+  active           Boolean  @default(true)
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([active])
+  @@index([normalizedName])
+  @@map("franchise_brands")
+}
+
+model SmeLeadScore {
+  id           Int      @id @default(autoincrement())
+  businessId   Int      @map("business_id")
+  version      String
+  total        Int
+  band         String
+  factors      String   @default("{}")
+  calculatedAt DateTime @default(now()) @map("calculated_at")
+
+  business SmeBusinessProfile @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([calculatedAt])
+  @@map("sme_lead_scores")
+}
+
+model LeadList {
+  id          Int            @id @default(autoincrement())
+  name        String         @unique
+  description String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+  items       LeadListItem[]
+
+  @@map("lead_lists")
+}
+
+model LeadListItem {
+  id         Int      @id @default(autoincrement())
+  listId     Int      @map("list_id")
+  leadId     Int?     @map("lead_id")
+  businessId Int?     @map("business_id")
+  addedAt    DateTime @default(now()) @map("added_at")
+
+  list     LeadList            @relation(fields: [listId], references: [id], onDelete: Cascade)
+  lead     Lead?               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  business SmeBusinessProfile? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, leadId])
+  @@index([listId])
+  @@map("lead_list_items")
+}
+
+model ContactActivity {
+  id         Int      @id @default(autoincrement())
+  leadId     Int?     @map("lead_id")
+  businessId Int?     @map("business_id")
+  type       String
+  channel    String?
+  status     String?
+  note       String?
+  metadata   String?
+  occurredAt DateTime @default(now()) @map("occurred_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  lead     Lead?               @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  business SmeBusinessProfile? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([leadId])
+  @@index([businessId])
+  @@index([occurredAt])
+  @@map("contact_activities")
+}
+
+model DoNotContact {
+  id                Int      @id @default(autoincrement())
+  normalizedContact String   @map("normalized_contact")
+  channel           String   @default("sms")
+  reason            String?
+  source            String?
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([normalizedContact, channel])
+  @@index([active])
+  @@map("do_not_contact")
 }
 
 model CsvImport {

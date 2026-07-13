@@ -1,0 +1,13 @@
+City,Commercial Area,Road Name,Latitude,Longitude,Default Radius m,Priority,Enabled
+Makati,Poblacion,Makati Avenue,14.5647,121.0294,400,A+,true
+Makati,Legazpi Village,Rada Street,14.5560,121.0200,350,A,true
+Taguig,BGC,Bonifacio High Street,14.5509,121.0492,400,A+,true
+Taguig,BGC,28th Street,14.5535,121.0480,350,A+,true
+Pasig,Ortigas CBD,ADB Avenue,14.5860,121.0600,450,A+,true
+Pasig,Kapitolyo,East Capitol Drive,14.5700,121.0600,450,A,true
+Quezon City,Tomas Morato,Tomas Morato Avenue,14.6349,121.0350,500,A,true
+Quezon City,Timog,Timog Avenue,14.6363,121.0333,500,A,true
+San Juan,Greenhills,Wilson Street,14.6030,121.0500,500,A,true
+Paranaque,BF Homes,Aguirre Avenue,14.4690,121.0180,500,A,true
+Muntinlupa,Alabang,Molito Lifestyle Center,14.4230,121.0400,500,B+,true
+Mandaluyong,Greenfield District,Mayflower Street,14.5780,121.0450,450,B+,true

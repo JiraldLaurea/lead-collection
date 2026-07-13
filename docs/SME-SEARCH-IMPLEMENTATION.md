@@ -9,7 +9,7 @@ Branch: `feature/sme-search-integration`
 
 - [x] **Phase 0** — Baseline, branch, feature flag
 - [x] **Phase 1** — Google Places (New) adapter + internal search domain
-- [ ] **Phase 2** — Additive schema, search-zone importer, franchise import template
+- [x] **Phase 2** — Additive schema, search-zone importer, franchise import template
 - [ ] **Phase 3** — Name normalization, franchise exclusion, classification, dedupe
 - [ ] **Phase 4** — SME Search UI
 - [ ] **Phase 5** — Save as lead + existing SMS composer integration
@@ -65,6 +65,71 @@ Observation feeding Phase 3: the "websites" Google returns for these SMEs are fr
 Facebook or Instagram pages, not owned domains. The shared-domain denylist in the
 classifier is therefore load-bearing — treating `facebook.com` as a brand domain would
 merge unrelated businesses into one phantom chain.
+
+## Database
+
+11 new tables. **No existing table is altered or dropped**, and no column is added to
+`leads`. The existing `leads` table remains the lead store: `sme_business_profiles.lead_id`
+is a nullable FK to `leads.id`, set only when a user explicitly saves a candidate. Every
+existing feature (SMS, email, export, logs) therefore works on a saved SME lead with no
+change.
+
+| Table | Purpose |
+| --- | --- |
+| `sme_search_zones` | City, area, road, coordinates, radius, priority, scan state |
+| `sme_search_runs` | One search execution: mode, parameters, counts, errors |
+| `sme_place_references` | Google place ID and fetch metadata |
+| `sme_business_profiles` | Internal business record, linked to `leads` once saved |
+| `sme_classifications` | Auto + effective SME class, confidence, reason codes, override audit |
+| `franchise_brands` | Admin-managed blacklist: aliases, domains, classification |
+| `sme_lead_scores` | Versioned score, band, per-factor breakdown |
+| `lead_lists`, `lead_list_items` | Reusable campaign target lists |
+| `contact_activities` | Search, save, SMS, reply, meeting, note history |
+| `do_not_contact` | Opt-out / suppression registry |
+
+### Applying and rolling back
+
+```bash
+npm run db:push            # additive; safe to re-run (CREATE TABLE IF NOT EXISTS)
+npm run db:rollback:sme    # drops ONLY the 11 SME tables
+```
+
+The DDL lives in `scripts/sme-schema.mjs` and is shared by both scripts so up and down
+cannot drift. `db:push` now loads `.env.local`, and applies the SME schema to **Turso**
+as well when `TURSO_DATABASE_URL` is set — previously it only ever wrote the local SQLite
+file, so a hosted deployment would have been missing these tables while local tests passed.
+
+⚠️ **The SME tables have not yet been applied to the hosted Turso database.** Run
+`npm run db:push` with the hosted credentials as a deploy step before enabling the feature
+in production.
+
+### Migration verified (13 Jul 2026)
+
+Up and down were run against a copy of the real `data/leads.sqlite` (309 leads, 81 email
+logs, 8 SMS logs, 572 access logs):
+
+- UP added exactly 11 tables; **every existing row preserved**.
+- Re-running UP is idempotent.
+- The `sme_business_profiles.lead_id` → `leads.id` foreign key resolves.
+- DOWN removed all 11 tables, restoring the original schema with **every original row intact**.
+
+### Importers
+
+Both are idempotent and support dry-run; re-importing the same file updates in place
+rather than duplicating.
+
+| Import | Template | Key |
+| --- | --- | --- |
+| Search zones | `docs/templates/search-zones-template.csv` | (city, commercial area, road name) |
+| Franchise brands | `docs/templates/franchise-brands-template.csv` | canonical name |
+
+Live-verified: dry run wrote 0 rows; real import created 12 zones and 48 brands;
+re-import reported 12/48 unchanged and created nothing.
+
+**The franchise template is a starting point, not an approved blacklist.** Per work order
+6.2 no list is seeded silently — an administrator must review it before import. The zone
+template's coordinates are approximate and should be verified against the actual
+Metro_Manila_Major_Commercial_Roads file when it is provided.
 
 ## Baseline (recorded before any change, commit `9ea91cc`)
 

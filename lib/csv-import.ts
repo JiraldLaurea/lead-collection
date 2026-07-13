@@ -93,7 +93,7 @@ export function parseCsvLeads(text: string) {
   return { leads, headerRow: headerIndex + 1, skippedRows };
 }
 
-function parseCsv(text: string) {
+export function parseCsv(text: string) {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
