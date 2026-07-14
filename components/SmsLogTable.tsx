@@ -31,6 +31,7 @@ export function SmsLogTable({ logs, filters }: { logs: SmsLogRow[]; filters: Sms
   const [selectedLog, setSelectedLog] = useState<SmsLogRow | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState("");
   const [noticeType, setNoticeType] = useState<"success" | "error">("success");
@@ -76,13 +77,59 @@ export function SmsLogTable({ logs, filters }: { logs: SmsLogRow[]; filters: Sms
     setNotice(payload.error?.message || "Unable to delete selected SMS logs.");
   }
 
+  /**
+   * Asks the SMSC about messages still waiting on a receipt, and gives up on the ones the
+   * provider will never report. Without this a row waits at "pending" indefinitely.
+   */
+  async function refreshDelivery() {
+    if (refreshing) return;
+    setRefreshing(true);
+    setNotice("");
+
+    const response = await fetch("/api/sms/reconcile?minAgeMinutes=1&limit=50", { method: "POST" });
+    const payload = await response.json();
+    setRefreshing(false);
+
+    if (!response.ok) {
+      setNoticeType("error");
+      setNotice(payload.error?.message || "Unable to check delivery status.");
+      return;
+    }
+
+    const { checked, resolved, markedNoReceipt, stillPending, querySupported } = payload.data;
+
+    if (checked === 0) {
+      setNoticeType("success");
+      setNotice("No messages are waiting on a delivery receipt.");
+      return;
+    }
+
+    const parts: string[] = [];
+    if (resolved > 0) parts.push(`${resolved} confirmed`);
+    if (markedNoReceipt > 0) parts.push(`${markedNoReceipt} marked "no receipt"`);
+    if (stillPending > 0) parts.push(`${stillPending} still waiting`);
+    if (!querySupported) parts.push("this provider does not report delivery status");
+
+    setNoticeType(resolved > 0 || markedNoReceipt > 0 ? "success" : "error");
+    setNotice(`Checked ${checked}: ${parts.join(" · ")}.`);
+    router.refresh();
+  }
+
   return (
     <div className="stack">
       {deleting ? <LoadingModal label="Deleting SMS logs" /> : null}
+      {refreshing ? <LoadingModal label="Checking delivery status" /> : null}
       {notice ? <Snackbar message={notice} type={noticeType} onDismiss={() => setNotice("")} /> : null}
       <div className="bulk-actions">
         <div className="bulk-actions-left" />
         <div className="bulk-actions-right">
+          <button type="button" className="secondary" disabled={refreshing} onClick={refreshDelivery}>
+            <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7" />
+              <path d="M3 4v5h5" />
+            </svg>
+            {refreshing ? "Checking..." : "Refresh delivery"}
+          </button>
           <SmsLogFiltersModal filters={filters} />
           <button
             type="button"
@@ -308,6 +355,11 @@ function isSuccessfulStatus(status: string) {
 
 function formatDeliveryStatus(status: string) {
   const normalized = status.toUpperCase();
+
+  // The provider never sent a receipt and does not answer query_sm, so the outcome is
+  // genuinely unknown. Say that, rather than leaving the row looking like it is still waiting.
+  if (normalized === "NO_RECEIPT") return "no receipt";
+
   const labels: Record<string, string> = {
     "1": "ENROUTE",
     "2": "DELIVERED",

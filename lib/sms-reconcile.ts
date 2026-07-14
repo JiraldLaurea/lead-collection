@@ -13,28 +13,53 @@ const messageStates: Record<string, { label: string; final: boolean; delivered: 
   "8": { label: "REJECTD", final: true, delivered: false }
 };
 
+/**
+ * Written on a message the provider will never report on, so the log stops implying a receipt
+ * is still coming. It is NOT a claim that the message failed — only that its fate is unknown.
+ */
+export const noReceiptStatus = "NO_RECEIPT";
+
 export type ReconcileResult = {
   checked: number;
+  /** Settled to delivered/failed by an actual query_sm answer. */
   resolved: number;
+  /** Given up on: too old, and the provider offers no way to find out. */
+  markedNoReceipt: number;
   stillPending: number;
   errors: number;
+  /** False when the SMSC ignores query_sm, as Bliply does. */
+  querySupported: boolean;
 };
 
+/** Hours after which a message with no receipt is declared unknowable rather than pending. */
+function receiptTimeoutHours() {
+  const value = Number(process.env.SMS_RECEIPT_TIMEOUT_HOURS);
+  return Number.isFinite(value) && value > 0 ? value : 6;
+}
+
 /**
- * Resolves messages stuck at "pending receipt" by asking the SMSC what happened to them.
+ * Resolves messages stuck at "pending receipt".
  *
- * The app only ever learned a message's fate from a deliver_sm the provider pushed to it. If
- * the provider never sends one — or it arrives while the process is restarting — the row sits
- * at "pending" forever, and there is no way to ever find out. This pulls the state instead of
- * waiting for it.
+ * Two mechanisms, because one provider is not like another:
  *
- * Only messages older than `minAgeMinutes` are checked: a receipt can legitimately take
- * half an hour on some routes, and querying immediately would just return ENROUTE.
+ * 1. Ask the SMSC with query_sm. Where it is supported, this settles the message properly.
+ *
+ * 2. Where it is NOT supported — Bliply simply ignores query_sm, and returns no delivery
+ *    receipts at all (its own dashboard reports DLR 0%) — there is no receipt to be had, from
+ *    any direction. Leaving the row at "pending" forever tells the operator a receipt is still
+ *    coming when it never will. After SMS_RECEIPT_TIMEOUT_HOURS the row is marked NO_RECEIPT:
+ *    an honest "we cannot know", not a false "delivered" and not a false "failed".
+ *
+ * The first query_sm timeout disables querying for the rest of the run, so an unsupporting
+ * provider costs one timeout instead of one per message.
  */
-export async function reconcilePendingSms(options: { minAgeMinutes?: number; limit?: number } = {}): Promise<ReconcileResult> {
+export async function reconcilePendingSms(
+  options: { minAgeMinutes?: number; limit?: number } = {}
+): Promise<ReconcileResult> {
   const minAgeMinutes = options.minAgeMinutes ?? 10;
   const limit = Math.min(options.limit ?? 50, 200);
   const cutoff = new Date(Date.now() - minAgeMinutes * 60 * 1000);
+  const giveUpBefore = new Date(Date.now() - receiptTimeoutHours() * 60 * 60 * 1000);
 
   const pending = await prisma.smsLog.findMany({
     where: {
@@ -45,40 +70,63 @@ export async function reconcilePendingSms(options: { minAgeMinutes?: number; lim
     },
     orderBy: { sentAt: "desc" },
     take: limit,
-    select: { id: true, phone: true, providerMessageId: true }
+    select: { id: true, phone: true, providerMessageId: true, sentAt: true }
   });
 
-  const result: ReconcileResult = { checked: pending.length, resolved: 0, stillPending: 0, errors: 0 };
+  const result: ReconcileResult = {
+    checked: pending.length,
+    resolved: 0,
+    markedNoReceipt: 0,
+    stillPending: 0,
+    errors: 0,
+    querySupported: true
+  };
 
   for (const log of pending) {
     // Dry-run rows never reached the SMSC; there is nothing to ask about.
     if (!log.providerMessageId || log.providerMessageId.startsWith("dryrun_")) continue;
 
-    const { state, error } = await querySmppMessageState(log.providerMessageId, log.phone);
+    if (result.querySupported) {
+      const { state, error } = await querySmppMessageState(log.providerMessageId, log.phone);
 
-    if (error || state === null) {
-      result.errors += 1;
-      continue;
-    }
-
-    const key = String(state);
-    const known = messageStates[key];
-
-    if (!known?.final) {
-      result.stillPending += 1;
-      continue;
-    }
-
-    await prisma.smsLog.update({
-      where: { id: log.id },
-      data: {
-        status: known.delivered ? "delivered" : "failed",
-        deliveryStatus: known.label,
-        deliveredAt: known.delivered ? new Date() : undefined,
-        deliveryReceipt: `query_sm: message_state=${key} (${known.label})`
+      if (error) {
+        // One timeout is enough to conclude the SMSC does not answer query_sm. Trying it on
+        // every remaining message would stall the request for 15 seconds each.
+        result.querySupported = false;
+        result.errors += 1;
+      } else if (state !== null) {
+        const known = messageStates[String(state)];
+        if (known?.final) {
+          await prisma.smsLog.update({
+            where: { id: log.id },
+            data: {
+              status: known.delivered ? "delivered" : "failed",
+              deliveryStatus: known.label,
+              deliveredAt: known.delivered ? new Date() : undefined,
+              deliveryReceipt: `query_sm: message_state=${state} (${known.label})`
+            }
+          });
+          result.resolved += 1;
+          continue;
+        }
+        result.stillPending += 1;
+        continue;
       }
-    });
-    result.resolved += 1;
+    }
+
+    // No answer available. If it is old enough, stop pretending one is coming.
+    if (log.sentAt < giveUpBefore) {
+      await prisma.smsLog.update({
+        where: { id: log.id },
+        data: {
+          deliveryStatus: noReceiptStatus,
+          deliveryReceipt: `No delivery receipt after ${receiptTimeoutHours()}h. The provider returned no receipt and does not answer query_sm, so the outcome cannot be confirmed either way.`
+        }
+      });
+      result.markedNoReceipt += 1;
+    } else {
+      result.stillPending += 1;
+    }
   }
 
   return result;
