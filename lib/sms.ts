@@ -112,7 +112,67 @@ type SmppModule = {
 const globalForSmpp = globalThis as unknown as {
   smppSession?: SmppSession | null;
   smppSessionPromise?: Promise<SmppSession> | null;
+  smppReconnectTimer?: ReturnType<typeof setTimeout> | null;
+  smppReconnectAttempts?: number;
 };
+
+/**
+ * Re-binds after the connection drops.
+ *
+ * A delivery receipt arrives as a deliver_sm over the bound session — and on this route a
+ * receipt can lag more than half an hour behind the send. The app used to bind only when it
+ * sent something, and never re-bind when the socket closed, so for most of its life it was not
+ * connected at all and every receipt arriving in that gap was silently lost. That is why
+ * messages sat at "pending" while the handset had clearly received them.
+ *
+ * Backs off to a minute between attempts, so a misconfigured provider does not become a
+ * reconnect loop.
+ */
+function scheduleSmppReconnect() {
+  if (globalForSmpp.smppReconnectTimer) return;
+  if ((process.env.SMS_PROVIDER ?? "mock") !== "smpp") return;
+
+  const config = smppConfig();
+  if (!config) return;
+
+  const attempts = globalForSmpp.smppReconnectAttempts ?? 0;
+  const delay = Math.min(5000 * 2 ** attempts, 60000);
+  globalForSmpp.smppReconnectAttempts = attempts + 1;
+
+  const timer = setTimeout(() => {
+    globalForSmpp.smppReconnectTimer = null;
+    getSmppSession(config)
+      .then(() => {
+        globalForSmpp.smppReconnectAttempts = 0;
+        console.log("[SMPP] re-bound after connection loss");
+      })
+      .catch(() => scheduleSmppReconnect());
+  }, delay);
+
+  // Must not hold the process open on its own.
+  timer.unref?.();
+  globalForSmpp.smppReconnectTimer = timer;
+}
+
+/**
+ * Makes sure a bound session exists, so the app is listening for delivery receipts even when
+ * it is not sending. Cheap to call repeatedly: it returns the existing session.
+ */
+export async function ensureSmppBound() {
+  if ((process.env.SMS_PROVIDER ?? "mock") !== "smpp") return false;
+
+  const config = smppConfig();
+  if (!config) return false;
+
+  try {
+    await getSmppSession(config);
+    globalForSmpp.smppReconnectAttempts = 0;
+    return true;
+  } catch {
+    scheduleSmppReconnect();
+    return false;
+  }
+}
 
 function smppConfig() {
   const host = process.env.SMPP_HOST;
@@ -397,9 +457,15 @@ async function getSmppSession(options: {
       const enquirePdu = pdu as SmppPdu;
       if (enquirePdu.response) session.send(enquirePdu.response());
     });
-    session.on("close", () => resetSmppSession());
+    // The socket dropping must not leave the app deaf: without a bound session no delivery
+    // receipt can reach us, and a receipt can arrive over half an hour after the send.
+    session.on("close", () => {
+      resetSmppSession();
+      scheduleSmppReconnect();
+    });
     session.on("error", (error) => {
       resetSmppSession();
+      scheduleSmppReconnect();
       reject(error instanceof Error ? error : new Error(String(error)));
     });
   });
