@@ -8,6 +8,7 @@ import { SmeDetailDrawer } from "@/components/SmeDetailDrawer";
 import { SmsComposerModal } from "@/components/SmsComposerModal";
 import { SmeEmailComposerModal } from "@/components/SmeEmailComposerModal";
 import { SmeScheduledSearchButton } from "@/components/SmeScheduledSearchSettingsForm";
+import { emptySmeTableFilters, SmeTableFiltersModal, type SmeTableFilters } from "@/components/SmeTableFiltersModal";
 import { Snackbar } from "@/components/Snackbar";
 import { TableStatusRow } from "@/components/TableStatusRow";
 import { smeCategories } from "@/lib/sme/categories";
@@ -49,11 +50,60 @@ const modes: { value: SearchMode; label: string; hint: string }[] = [
   { value: "FREE_TEXT", label: "Free text", hint: "Search a natural-language query." }
 ];
 
+type SmeSortKey = "BUSINESS" | "LOCATION" | "CONTACT" | "SCORE" | "LEAD_STATUS";
+type SortDirection = "asc" | "desc";
+
+function leadStatusLabel(result: SmeSearchResult) {
+  if (result.doNotContact) return "Do not contact";
+  return result.leadStatus.replaceAll("_", " ").toLocaleLowerCase().replace(/\b\w/g, (letter) => letter.toLocaleUpperCase());
+}
+
+function contactAvailabilityScore(result: SmeSearchResult) {
+  return (result.phoneNumber ? 4 : 0) + (result.email ? 2 : 0) + (result.websiteUrl ? 1 : 0);
+}
+
+function compareSmeResults(left: SmeSearchResult, right: SmeSearchResult, sort: { key: SmeSortKey; direction: SortDirection }) {
+  let comparison = 0;
+
+  switch (sort.key) {
+    case "BUSINESS":
+      comparison = left.displayName.localeCompare(right.displayName);
+      break;
+    case "LOCATION":
+      comparison = (left.formattedAddress ?? "").localeCompare(right.formattedAddress ?? "");
+      break;
+    case "CONTACT":
+      comparison = contactAvailabilityScore(left) - contactAvailabilityScore(right);
+      break;
+    case "LEAD_STATUS":
+      comparison = leadStatusLabel(left).localeCompare(leadStatusLabel(right));
+      break;
+    case "SCORE":
+      comparison = left.score.total - right.score.total;
+      break;
+  }
+
+  if (comparison === 0 && sort.key !== "BUSINESS") {
+    comparison = left.displayName.localeCompare(right.displayName);
+  }
+  return sort.direction === "asc" ? comparison : -comparison;
+}
+
+function SortDirectionIndicator({ direction }: { direction?: SortDirection }) {
+  return (
+    <svg className="sme-table-sort-indicator" viewBox="0 0 16 16" aria-hidden="true">
+      {direction === "asc" ? <path d="m4 10 4-4 4 4" /> : null}
+      {direction === "desc" ? <path d="m4 6 4 4 4-4" /> : null}
+      {!direction ? <><path d="m4 6 4-4 4 4" /><path d="m4 10 4 4 4-4" /></> : null}
+    </svg>
+  );
+}
+
 export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate, emailBodyTemplate, initialResults, scheduledSearch, scheduledSearchSettings, showSearchForm = true }: SmeSearchWorkspaceProps) {
   const [mode, setMode] = useState<SearchMode>("COMMERCIAL_ROAD");
   const [zoneKey, setZoneKey] = useState("");
   const [city, setCity] = useState("");
-  const [category, setCategory] = useState("cafe");
+  const [category, setCategory] = useState("cafe_resto");
   const [keyword, setKeyword] = useState("");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
@@ -79,13 +129,15 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate, emailBodyTe
   const [summary, setSummary] = useState<SearchRunSummary | null>(showSearchForm ? null : scheduledSearch?.summary ?? null);
   const [reviewCount, setReviewCount] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
-  const [pageSize, setPageSize] = useState<50 | 100 | 200>(50);
+  const [tableFilters, setTableFilters] = useState<SmeTableFilters>(emptySmeTableFilters);
+  const [sort, setSort] = useState<{ key: SmeSortKey; direction: SortDirection }>({ key: "SCORE", direction: "desc" });
+  const [pageSize, setPageSize] = useState<20 | 50 | 100 | 200>(20);
   const [currentPage, setCurrentPage] = useState(1);
   const [detail, setDetail] = useState<SmeSearchResult | null>(null);
   const [findingEmails, setFindingEmails] = useState(false);
   const [notice, setNotice] = useState("");
   const [composerPlaceIds, setComposerPlaceIds] = useState<string[] | null>(null);
-  const [emailRecipients, setEmailRecipients] = useState<{ id: number; businessName: string }[] | null>(null);
+  const [emailRecipientPlaceIds, setEmailRecipientPlaceIds] = useState<string[] | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const selectedZone = zones.find(
@@ -123,11 +175,44 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate, emailBodyTe
         ? ["INDEPENDENT_SME", "LOCAL_SME_CHAIN", "MANUAL_INCLUDE"].includes(result.classification.effectiveClass)
         : true
     )
+    .filter((result) => {
+      const query = tableFilters.query.toLocaleLowerCase();
+      const matchesQuery = !query || [result.displayName, result.formattedAddress, result.primaryType]
+        .filter(Boolean)
+        .some((value) => value?.toLocaleLowerCase().includes(query));
+      const matchesContact = !tableFilters.contact
+        || (tableFilters.contact === "PHONE" && Boolean(result.phoneNumber))
+        || (tableFilters.contact === "EMAIL" && Boolean(result.email))
+        || (tableFilters.contact === "WEBSITE" && Boolean(result.websiteUrl));
+      const matchesScoreBand = !tableFilters.scoreBand || result.score.band === tableFilters.scoreBand;
+      const matchesClassification = !tableFilters.classification || result.classification.effectiveClass === tableFilters.classification;
+      const matchesLeadStatus = !tableFilters.leadStatus || leadStatusLabel(result).toLocaleUpperCase().replaceAll(" ", "_") === tableFilters.leadStatus;
+      return matchesQuery && matchesContact && matchesScoreBand && matchesClassification && matchesLeadStatus;
+    })
     .slice()
-    .sort((left, right) => right.score.total - left.score.total);
+    .sort((left, right) => compareSmeResults(left, right, sort));
   const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
   const activePage = Math.min(currentPage, totalPages);
   const pageResults = visible.slice((activePage - 1) * pageSize, activePage * pageSize);
+
+  function toggleSort(key: SmeSortKey) {
+    setSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === "asc" ? "desc" : "asc"
+    }));
+    setCurrentPage(1);
+  }
+
+  function sortButtonProps(key: SmeSortKey, label: string) {
+    const isActive = sort.key === key;
+    return {
+      type: "button" as const,
+      className: `sme-table-sort-button${isActive ? " is-active" : ""}`,
+      onClick: () => toggleSort(key),
+      "aria-label": `Sort by ${label}`,
+      "aria-pressed": isActive
+    };
+  }
 
   async function search(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -221,9 +306,6 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate, emailBodyTe
   }
 
   const selectedResults = (results ?? []).filter((result) => selected.includes(result.providerPlaceId));
-  const selectedEmailRecipients = selectedResults.flatMap((result) =>
-    result.savedLeadId && result.email ? [{ id: result.savedLeadId, businessName: result.displayName }] : []
-  );
   const selectedProviderPlaceIds = selectedResults.map((result) => result.providerPlaceId);
 
   function openSmsComposer() {
@@ -328,13 +410,13 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate, emailBodyTe
           }}
         />
       ) : null}
-      {emailRecipients ? (
+      {emailRecipientPlaceIds ? (
         <SmeEmailComposerModal
-          recipients={emailRecipients}
+          providerPlaceIds={emailRecipientPlaceIds}
           initialBody={emailBodyTemplate}
-          onClose={() => setEmailRecipients(null)}
+          onClose={() => setEmailRecipientPlaceIds(null)}
           onSent={(sent, failed) => {
-            setEmailRecipients(null);
+            setEmailRecipientPlaceIds(null);
             setNotice(`Sent ${sent} email${sent === 1 ? "" : "s"}${failed ? `, ${failed} failed` : ""}.`);
           }}
         />
@@ -498,9 +580,17 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate, emailBodyTe
               Lead status
               <select value={leadStatus} onChange={(event) => setLeadStatus(event.target.value)}>
                 <option value="">Any</option>
-                <option value="CAPTURED">Captured, not saved</option>
-                <option value="SAVED">Saved lead</option>
+                <option value="NEW">New</option>
+                <option value="QUALIFIED">Qualified</option>
+                <option value="READY_TO_CONTACT">Ready to contact</option>
                 <option value="CONTACTED">Previously contacted</option>
+                <option value="REPLIED">Replied</option>
+                <option value="MEETING">Meeting</option>
+                <option value="PROPOSAL_SENT">Proposal sent</option>
+                <option value="NEGOTIATING">Negotiating</option>
+                <option value="WON">Won</option>
+                <option value="LOST">Lost</option>
+                <option value="NURTURE">Nurture</option>
                 <option value="DO_NOT_CONTACT">Do not contact</option>
               </select>
             </label>
@@ -586,14 +676,23 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate, emailBodyTe
             <button
               type="button"
               className="secondary"
-              disabled={selectedEmailRecipients.length === 0}
-              onClick={() => setEmailRecipients(selectedEmailRecipients)}
-              title={selectedEmailRecipients.length === 0 ? "Selected businesses need a saved email address before they can receive email." : undefined}
+              disabled={selectedProviderPlaceIds.length === 0 || findingEmails}
+              onClick={() => setEmailRecipientPlaceIds(selectedProviderPlaceIds)}
+              title={selectedProviderPlaceIds.length === 0 ? "Select businesses before composing an email." : "Emails and Do Not Contact status are checked before sending."}
             >
-              Compose Email
+              Compose Email{selected.length > 0 ? ` (${selected.length})` : ""}
             </button>
           </div>
-          <button type="button" className="secondary" disabled={visible.length === 0} onClick={exportVisibleCsv}>Export CSV</button>
+          <div>
+            <SmeTableFiltersModal
+              filters={tableFilters}
+              onApply={(filters) => {
+                setTableFilters(filters);
+                setCurrentPage(1);
+              }}
+            />
+            <button type="button" className="secondary" disabled={visible.length === 0} onClick={exportVisibleCsv}>Export CSV</button>
+          </div>
         </div>
       ) : null}
 
@@ -632,11 +731,31 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate, emailBodyTe
                       />
                     </span>
                   </th>
-                  <th>Business</th>
-                  <th>Location</th>
-                  <th>Contact</th>
-                  <th>Score &amp; SME status</th>
-                  <th>Status</th>
+                  <th aria-sort={sort.key === "BUSINESS" ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <button {...sortButtonProps("BUSINESS", "business")}>
+                      Business <SortDirectionIndicator direction={sort.key === "BUSINESS" ? sort.direction : undefined} />
+                    </button>
+                  </th>
+                  <th aria-sort={sort.key === "LOCATION" ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <button {...sortButtonProps("LOCATION", "location")}>
+                      Location <SortDirectionIndicator direction={sort.key === "LOCATION" ? sort.direction : undefined} />
+                    </button>
+                  </th>
+                  <th aria-sort={sort.key === "CONTACT" ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <button {...sortButtonProps("CONTACT", "contact availability")}>
+                      Contact <SortDirectionIndicator direction={sort.key === "CONTACT" ? sort.direction : undefined} />
+                    </button>
+                  </th>
+                  <th aria-sort={sort.key === "SCORE" ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <button {...sortButtonProps("SCORE", "lead score")}>
+                      Score &amp; SME status <SortDirectionIndicator direction={sort.key === "SCORE" ? sort.direction : undefined} />
+                    </button>
+                  </th>
+                  <th aria-sort={sort.key === "LEAD_STATUS" ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                    <button {...sortButtonProps("LEAD_STATUS", "lead status")}>
+                      Lead status <SortDirectionIndicator direction={sort.key === "LEAD_STATUS" ? sort.direction : undefined} />
+                    </button>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -708,14 +827,10 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate, emailBodyTe
                           {smeClassLabel(result.classification.effectiveClass)}
                         </span>
                       </td>
-                      <td>
-                        {result.doNotContact ? (
-                          <span className="status-pill status-pill-muted">Do not contact</span>
-                        ) : result.savedLeadId ? (
-                          <span className="status-pill status-pill-success">Lead saved</span>
-                        ) : (
-                          <span className="muted">Captured</span>
-                        )}
+                      <td className="sme-lead-status-cell">
+                        <span className={result.doNotContact || ["LOST", "NURTURE"].includes(result.leadStatus) ? "status-pill status-pill-muted" : "status-pill status-pill-success"}>
+                          {leadStatusLabel(result)}
+                        </span>
                       </td>
                     </tr>
                   ))
@@ -725,28 +840,33 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate, emailBodyTe
           </div>
           {visible.length > 0 ? (
             <div className="table-pagination sme-table-pagination">
-              <span className="muted">
-                Page {activePage} of {totalPages}
-              </span>
+              <div className="table-pagination-summary" aria-live="polite">
+                <strong>
+                  Showing {Math.min((activePage - 1) * pageSize + 1, visible.length)}–{Math.min(activePage * pageSize, visible.length)}
+                </strong>
+                <span className="muted">of {visible.length} results</span>
+              </div>
               <div className="table-pagination-controls">
                 <label className="table-page-size">
-                  Rows
+                  <span>Rows per page</span>
                   <select
                     value={pageSize}
                     onChange={(event) => {
-                      setPageSize(Number(event.target.value) as 50 | 100 | 200);
+                      setPageSize(Number(event.target.value) as 20 | 50 | 100 | 200);
                       setCurrentPage(1);
                     }}
                   >
+                    <option value={20}>20</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
                     <option value={200}>200</option>
                   </select>
                 </label>
-                <button type="button" className="secondary" disabled={activePage <= 1} onClick={() => setCurrentPage(activePage - 1)}>
+                <span className="table-page-position">Page {activePage} of {totalPages}</span>
+                <button type="button" className="secondary table-page-button" disabled={activePage <= 1} onClick={() => setCurrentPage(activePage - 1)}>
                   Previous
                 </button>
-                <button type="button" className="secondary" disabled={activePage >= totalPages} onClick={() => setCurrentPage(activePage + 1)}>
+                <button type="button" className="secondary table-page-button" disabled={activePage >= totalPages} onClick={() => setCurrentPage(activePage + 1)}>
                   Next
                 </button>
               </div>

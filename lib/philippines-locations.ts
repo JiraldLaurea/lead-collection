@@ -33,6 +33,9 @@ export type Province = keyof typeof philippinesLocations;
 
 export const provinces = Object.keys(philippinesLocations) as Province[];
 
+/** The Metro Manila (NCR) cities, sorted. The only cities SME search and outreach target. */
+export const metroManilaCities: string[] = [...philippinesLocations.NCR].sort();
+
 export const philippinesCityCoordinates: Record<string, { latitude: number; longitude: number }> = {
   Caloocan: { latitude: 14.6507, longitude: 120.9668 },
   "Las Pinas": { latitude: 14.4445, longitude: 120.9939 },

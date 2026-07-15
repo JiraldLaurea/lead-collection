@@ -2,9 +2,9 @@
  * Browser-level acceptance check for SME Search.
  *
  * Prerequisite: `npm run dev` is serving this app on http://localhost:3000.
- * The script creates only the existing debug sample, forces SMS dry-run on, performs a
- * one-result Places search, captures desktop/mobile screenshots, sends one dry-run SMS,
- * and verifies that it appears in SMS history.
+ * The script creates only the existing debug sample, forces SMS/email dry-run on, performs a
+ * one-result Places search, captures desktop/mobile screenshots, sends one dry-run SMS and
+ * one dry-run email from the captured SME profile, and verifies both history entries.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -73,6 +73,16 @@ try {
     throw new Error("SME Search is unavailable. Enable the feature flag before browser verification.");
   }
 
+  await page.getByRole("button", { name: "Schedule search" }).click();
+  const scheduledDialog = page.getByRole("dialog", { name: "Scheduled SME Search" });
+  await scheduledDialog.waitFor({ state: "visible", timeout: 10000 });
+  const scheduledFooterButtons = await scheduledDialog.locator(".compose-modal-actions button").allTextContents();
+  if (scheduledFooterButtons.join("|") !== "Cancel|Run now|Save schedule") {
+    throw new Error(`Scheduled-search footer order is incorrect: ${scheduledFooterButtons.join(" | ")}`);
+  }
+  await page.screenshot({ path: path.join(outputDir, "scheduled-search-actions.png"), fullPage: true });
+  await page.getByRole("button", { name: "Close scheduled search" }).click();
+
   // One result keeps the production Places verification inexpensive while still testing the
   // actual UI → server route → Google adapter path.
   await page.locator("label:has-text('Search mode') select").selectOption("FREE_TEXT");
@@ -84,6 +94,24 @@ try {
     throw new Error(`Places search failed: ${await page.locator(".sme-send-error").first().innerText()}`);
   }
   await page.screenshot({ path: path.join(outputDir, "desktop-search.png"), fullPage: true });
+
+  await page.getByRole("button", { name: "Sort by business" }).click();
+  const businessSortState = await page.locator(".sme-results-table thead th").nth(1).getAttribute("aria-sort");
+  if (businessSortState !== "ascending") throw new Error(`Business sorting did not activate (received ${businessSortState}).`);
+
+  await page.getByRole("button", { name: "Show filters" }).click();
+  await page.getByRole("heading", { name: "SME table filters" }).waitFor({ state: "visible", timeout: 10000 });
+  await page.screenshot({ path: path.join(outputDir, "desktop-table-filters.png"), fullPage: true });
+  await page.getByRole("button", { name: "Close SME table filters" }).click();
+
+  await page.locator(".sme-results-table tbody tr.clickable-row").first().click();
+  await page.locator(".sme-detail-modal").waitFor({ state: "visible", timeout: 10000 });
+  await page.screenshot({ path: path.join(outputDir, "desktop-result-detail.png"), fullPage: true });
+  await page.locator(".sme-detail-modal .compose-modal-scroll").evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await page.screenshot({ path: path.join(outputDir, "desktop-result-detail-footer.png"), fullPage: true });
+  await page.getByRole("button", { name: "Close details" }).click();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: path.join(outputDir, "mobile-search.png"), fullPage: true });
@@ -102,10 +130,27 @@ try {
   await page.getByText("Jirald Sample Cafe").first().waitFor({ state: "visible", timeout: 15000 });
   await page.screenshot({ path: path.join(outputDir, "sms-history.png"), fullPage: true });
 
+  await page.goto(`${baseUrl}/sme-search`, { waitUntil: "networkidle" });
+  const emailSampleRow = page.locator("tr", { hasText: "Jirald Sample Cafe" }).first();
+  await emailSampleRow.waitFor({ state: "visible", timeout: 15000 });
+  await emailSampleRow.getByLabel("Select Jirald Sample Cafe").click();
+  await page.getByRole("button", { name: /Compose Email \(1\)/ }).click();
+  await page.getByRole("dialog", { name: "Compose Email" }).waitFor({ state: "visible" });
+  await page.getByRole("button", { name: "Send Email to 1" }).click();
+  await page.getByText(/Sent 1 email/).waitFor({ state: "visible", timeout: 15000 });
+
+  await page.goto(`${baseUrl}/email-log`, { waitUntil: "networkidle" });
+  await page.getByText("Jirald Sample Cafe").first().waitFor({ state: "visible", timeout: 15000 });
+  await page.screenshot({ path: path.join(outputDir, "email-history.png"), fullPage: true });
+
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.getByRole("heading", { name: "Recent SME leads" }).waitFor({ state: "visible", timeout: 15000 });
+  await page.screenshot({ path: path.join(outputDir, "dashboard-recent-sme-leads.png"), fullPage: true });
+
   console.log(JSON.stringify({
     verified: true,
-    flow: "Google Places search → captured SME result → SMS composer → dry-run send → SMS history",
-    screenshots: ["desktop-search.png", "mobile-search.png", "sms-history.png"],
+    flow: "Google Places search → captured SME result → SMS/email composers → dry-run sends → SMS/email history",
+    screenshots: ["scheduled-search-actions.png", "desktop-search.png", "desktop-table-filters.png", "desktop-result-detail.png", "desktop-result-detail-footer.png", "mobile-search.png", "sms-history.png", "email-history.png", "dashboard-recent-sme-leads.png"],
     outputDir
   }));
 } finally {

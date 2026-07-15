@@ -8,6 +8,7 @@ export type DashboardRecentLead = {
   category: string;
   email: string;
   collectedAt: string;
+  href: string;
 };
 
 export function DashboardRecentLeadsTable({ leads }: { leads: DashboardRecentLead[] }) {
@@ -35,11 +36,11 @@ export function DashboardRecentLeadsTable({ leads }: { leads: DashboardRecentLea
                 className="clickable-row"
                 key={lead.id}
                 tabIndex={0}
-                onClick={() => router.push(`/leads/${lead.id}`)}
+                onClick={() => router.push(lead.href)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    router.push(`/leads/${lead.id}`);
+                    router.push(lead.href);
                   }
                 }}
               >

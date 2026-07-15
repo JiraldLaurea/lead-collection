@@ -1,4 +1,4 @@
-import { runScheduledAutoEmailCycle } from "@/lib/hosted-auto-email";
+import { runOutreachCycle } from "@/lib/auto-outreach";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -10,9 +10,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    return Response.json(await runScheduledAutoEmailCycle());
+    return Response.json(await runOutreachCycle());
   } catch (error) {
-    console.error("[AUTO-EMAIL CRON]", error);
-    return Response.json({ processed: false, reason: "Automation cycle failed." }, { status: 500 });
+    console.error("[AUTO-OUTREACH CRON]", error);
+    return Response.json({ processed: false, reason: "Outreach cycle failed." }, { status: 500 });
   }
 }

@@ -8,6 +8,9 @@ import type { ScheduledSmeSearchSettings } from "@/lib/sme/scheduled-search";
 
 type Zone = { id: number; city: string; commercialArea: string; roadName: string; latitude: number | null; longitude: number | null };
 
+/** Client-safe copy of the ALL_NCR_CITIES sentinel from lib/sme/scheduled-search (that module pulls in Prisma). */
+const ALL_NCR_CITIES = "ALL";
+
 export function SmeScheduledSearchButton({ settings, zones, cities }: { settings: ScheduledSmeSearchSettings; zones: Zone[]; cities: string[] }) {
   const [open, setOpen] = useState(false);
   const [enabled, setEnabled] = useState(settings.enabled);
@@ -15,15 +18,20 @@ export function SmeScheduledSearchButton({ settings, zones, cities }: { settings
   const [zoneId, setZoneId] = useState(settings.zoneId ? String(settings.zoneId) : "");
   const [city, setCity] = useState(settings.city);
   const [category, setCategory] = useState(settings.category);
+  const [categories, setCategories] = useState<string[]>(settings.categories);
   const [maxResults, setMaxResults] = useState(settings.maxResults);
+  const [maxPerCategory, setMaxPerCategory] = useState(settings.maxPerCategory);
   const [radiusMeters, setRadiusMeters] = useState(settings.radiusMeters);
-  const [localTime, setLocalTime] = useState(settings.localTime);
   const [loading, setLoading] = useState("");
   const [notice, setNotice] = useState("");
   const [noticeType, setNoticeType] = useState<"success" | "error">("success");
 
+  function toggleCategory(key: string, checked: boolean) {
+    setCategories((prev) => (checked ? Array.from(new Set([...prev, key])) : prev.filter((item) => item !== key)));
+  }
+
   function settingsPayload() {
-    return { enabled, locationMode, zoneId: zoneId ? Number(zoneId) : null, city, category, maxResults, radiusMeters, localTime };
+    return { enabled, locationMode, zoneId: zoneId ? Number(zoneId) : null, city, category, categories, maxResults, maxPerCategory, radiusMeters };
   }
 
   async function persistSettings() {
@@ -54,11 +62,11 @@ export function SmeScheduledSearchButton({ settings, zones, cities }: { settings
   async function runNow() {
     setLoading("Running scheduled SME search");
     setNotice("");
-    const { response: settingsResponse, payload: settingsPayload } = await persistSettings();
+    const { response: settingsResponse, payload: settingsPayloadResult } = await persistSettings();
     if (!settingsResponse.ok) {
       setLoading("");
       setNoticeType("error");
-      setNotice(settingsPayload.error?.message || "Unable to save the current scheduled search settings.");
+      setNotice(settingsPayloadResult.error?.message || "Unable to save the current scheduled search settings.");
       return;
     }
     const response = await fetch("/api/sme-search/schedule/run", { method: "POST" });
@@ -72,6 +80,8 @@ export function SmeScheduledSearchButton({ settings, zones, cities }: { settings
     setNoticeType("success");
     window.location.assign("/sme-search/scheduled?completed=1");
   }
+
+  const runDisabled = Boolean(loading) || (locationMode === "STREET" ? !zoneId : !city || categories.length === 0);
 
   return (
     <>
@@ -91,7 +101,7 @@ export function SmeScheduledSearchButton({ settings, zones, cities }: { settings
               </header>
               <div className="compose-modal-body">
                 <div className="automation-info sme-scheduled-search-info">
-                  <p><strong>Hosted:</strong> Vercel Hobby runs once daily during the 9:00 AM Manila hour. <strong>Local:</strong> while this app is open locally, it runs at the time below (Manila time) if the hosted cron has not already run that day.</p>
+                  <p>Runs once per day: hosted on the daily cron, or locally while this app is open (if the cron has not already run that day). Each category collects up to its <strong>max leads per category</strong>, then stops.</p>
                 </div>
                 <label className="switch-field">
                   <input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
@@ -102,8 +112,8 @@ export function SmeScheduledSearchButton({ settings, zones, cities }: { settings
                   <label>
                     Search area
                     <select value={locationMode} onChange={(event) => setLocationMode(event.target.value as typeof locationMode)}>
+                      <option value="CITY">City + categories</option>
                       <option value="STREET">Street</option>
-                      <option value="CITY">City</option>
                     </select>
                   </label>
                   {locationMode === "STREET" ? <>
@@ -122,35 +132,53 @@ export function SmeScheduledSearchButton({ settings, zones, cities }: { settings
                     Search radius (m)
                     <input type="number" min={50} max={50000} step={50} value={radiusMeters} onChange={(event) => setRadiusMeters(Number(event.target.value))} />
                   </label>
-                  </> : <label>
-                    City
-                    <select value={city} onChange={(event) => setCity(event.target.value)} required={enabled}>
-                      <option value="">Select a city</option>
-                      {cities.map((item) => <option key={item} value={item}>{item}</option>)}
-                    </select>
-                  </label>}
                   <label>
                     Category
                     <select value={category} onChange={(event) => setCategory(event.target.value)}>
                       <option value="">Any</option>
-                      {smeCategories.filter((item) => item.googleTypes.length > 0).map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                      {smeCategories.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
                     </select>
                   </label>
                   <label>
                     Maximum Grade A results
                     <input type="number" min={1} max={60} value={maxResults} onChange={(event) => setMaxResults(Number(event.target.value))} />
                   </label>
+                  </> : <>
                   <label>
-                    Local run time (Manila)
-                    <input type="time" value={localTime} onChange={(event) => setLocalTime(event.target.value)} />
+                    City
+                    <select value={city} onChange={(event) => setCity(event.target.value)} required={enabled}>
+                      <option value="">Select a city</option>
+                      <option value={ALL_NCR_CITIES}>All NCR cities</option>
+                      {cities.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
                   </label>
+                  <label>
+                    Max leads per category
+                    <input type="number" min={1} max={60} value={maxPerCategory} onChange={(event) => setMaxPerCategory(Number(event.target.value))} />
+                  </label>
+                  <fieldset className="sme-category-checklist">
+                    <legend>Categories</legend>
+                    {smeCategories.map((item) => (
+                      <label key={item.key} className="checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={categories.includes(item.key)}
+                          onChange={(event) => toggleCategory(item.key, event.target.checked)}
+                        />
+                        <span>{item.label}</span>
+                      </label>
+                    ))}
+                  </fieldset>
+                  </>}
                 </div>
-                {category === "" ? <p className="field-note">Any category uses Google&apos;s location-biased discovery search; selecting a category gives the tightest radius matching.</p> : null}
+                {locationMode === "CITY" && city === ALL_NCR_CITIES ? (
+                  <p className="field-note">All NCR cities × {categories.length || 0} categor{categories.length === 1 ? "y" : "ies"} runs many searches in one pass — it can take several minutes and use significant Google Places quota.</p>
+                ) : null}
               </div>
               <footer className="compose-modal-actions">
-                <button type="button" className="secondary" onClick={runNow} disabled={Boolean(loading) || (locationMode === "STREET" ? !zoneId : !city)}>Run now</button>
+                <button type="button" className="secondary" onClick={() => setOpen(false)} disabled={Boolean(loading)}>Cancel</button>
                 <div className="compose-modal-action-group">
-                  <button type="button" className="secondary" onClick={() => setOpen(false)} disabled={Boolean(loading)}>Cancel</button>
+                  <button type="button" onClick={runNow} disabled={runDisabled}>Run now</button>
                   <button type="submit" disabled={Boolean(loading)}>Save schedule</button>
                 </div>
               </footer>

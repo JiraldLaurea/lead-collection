@@ -1,4 +1,4 @@
-import { usesHostedAutomation } from "@/lib/auto-email";
+import { usesHostedAutomation } from "@/lib/auto-outreach";
 import { ok } from "@/lib/http";
 import { requireApiAdmin, requireSmeSearchApi } from "@/lib/require-auth";
 import { runScheduledSmeSearch } from "@/lib/sme/scheduled-search";

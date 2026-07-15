@@ -151,6 +151,7 @@ export async function getRecentPersistedSmeResults(limit = 100): Promise<SmeSear
         band: parseScoreBand(score.band),
         factors: parseJson<ScoreFactor[]>(score.factors, [])
       } satisfies LeadScore,
+      leadStatus: profile.leadStatus as import("@/lib/sme/types").SmeLeadStatus,
       savedLeadId: profile.leadId,
       alreadyContacted: Boolean(profile.lead && (profile.lead.smsLogs.length > 0 || profile.lead.emailLogs.length > 0)),
       doNotContact: Boolean(phone && suppressedPhones.has(phone))

@@ -11,7 +11,7 @@ import { scoreLead, type LeadScore } from "@/lib/sme/score";
 import { runDiscovery } from "@/lib/sme/search";
 import { getSmeSettings } from "@/lib/sme/settings";
 import { persistSmeSearchResults } from "@/lib/sme/persist-results";
-import type { BusinessCandidate, SearchFilters, SearchRequest, SearchRunSummary } from "@/lib/sme/types";
+import type { BusinessCandidate, SearchFilters, SearchRequest, SearchRunSummary, SmeLeadStatus } from "@/lib/sme/types";
 
 export type SmeSearchResult = {
   providerPlaceId: string;
@@ -31,6 +31,7 @@ export type SmeSearchResult = {
   email?: string | null;
   classification: Classification;
   score: LeadScore;
+  leadStatus: SmeLeadStatus;
   /** Set when this business is already saved as a lead. */
   savedLeadId: number | null;
   alreadyContacted: boolean;
@@ -172,6 +173,11 @@ async function toResults(
     select: { id: true, placeId: true, email: true, smsLogs: { select: { id: true }, take: 1 }, emailLogs: { select: { id: true }, take: 1 } }
   });
   const savedByPlaceId = new Map(savedLeads.map((lead) => [lead.placeId, lead]));
+  const profiles = await prisma.smeBusinessProfile.findMany({
+    where: { providerPlaceId: { in: candidates.map((candidate) => candidate.providerPlaceId) } },
+    select: { providerPlaceId: true, leadId: true, email: true, leadStatus: true }
+  });
+  const profileByPlaceId = new Map(profiles.map((profile) => [profile.providerPlaceId, profile]));
 
   const phones = candidates
     .map((candidate) => normalizePhilippineMobileNumber(candidate.phoneNumber))
@@ -186,6 +192,7 @@ async function toResults(
 
   return candidates.map((candidate) => {
     const lead = savedByPlaceId.get(toLeadPlaceId(candidate.providerPlaceId));
+    const profile = profileByPlaceId.get(candidate.providerPlaceId);
     const phone = normalizePhilippineMobileNumber(candidate.phoneNumber);
     const classification = classifications.get(candidate.providerPlaceId) as Classification;
 
@@ -216,11 +223,12 @@ async function toResults(
       reviewCount: candidate.userRatingCount,
       businessStatus: candidate.businessStatus,
       googleMapsUri: candidate.googleMapsUri,
-      email: lead?.email ?? null,
+      email: profile?.email ?? lead?.email ?? null,
       classification,
       score,
-      savedLeadId: lead?.id ?? null,
-      alreadyContacted: Boolean(lead && (lead.smsLogs.length > 0 || lead.emailLogs.length > 0)),
+      leadStatus: (profile?.leadStatus as SmeLeadStatus | undefined) ?? (lead ? "QUALIFIED" : "NEW"),
+      savedLeadId: lead?.id ?? profile?.leadId ?? null,
+      alreadyContacted: profile?.leadStatus === "CONTACTED" || Boolean(lead && (lead.smsLogs.length > 0 || lead.emailLogs.length > 0)),
       doNotContact: Boolean(phone && suppressedPhones.has(phone))
     } satisfies SmeSearchResult;
   });
@@ -239,10 +247,7 @@ export function matchesFilters(result: SmeSearchResult, filters: SearchFilters) 
   const franchiseExcluded = ["FRANCHISE_EXCLUDED", "LARGE_CHAIN", "MANUAL_EXCLUDE"].includes(result.classification.effectiveClass);
   if (filters.franchiseStatus === "INCLUDED" && franchiseExcluded) return false;
   if (filters.franchiseStatus === "EXCLUDED" && !franchiseExcluded) return false;
-  if (filters.leadStatus === "CAPTURED" && result.savedLeadId !== null) return false;
-  if (filters.leadStatus === "SAVED" && result.savedLeadId === null) return false;
-  if (filters.leadStatus === "CONTACTED" && !result.alreadyContacted) return false;
-  if (filters.leadStatus === "DO_NOT_CONTACT" && !result.doNotContact) return false;
+  if (filters.leadStatus && result.leadStatus !== filters.leadStatus) return false;
   if (filters.excludeDoNotContact && result.doNotContact) return false;
   if (filters.excludePreviouslyContacted && result.alreadyContacted) return false;
   return true;

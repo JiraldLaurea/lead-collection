@@ -1,6 +1,13 @@
-import { disableAutomationStatus, ensureAutomationRunning, usesHostedAutomation } from "@/lib/auto-email";
+import { disableOutreachStatus, ensureOutreachRunning, usesHostedAutomation } from "@/lib/auto-outreach";
 import { fail, ok } from "@/lib/http";
-import { normalizeDailyLimit, normalizeTimeValue, saveOperationsSettings } from "@/lib/operations-settings";
+import {
+  normalizeDailyLimit,
+  normalizeMaxPerCategory,
+  normalizeOutreachCategories,
+  normalizeOutreachCity,
+  normalizeTimeValue,
+  saveOperationsSettings
+} from "@/lib/operations-settings";
 import { requireApiAdmin } from "@/lib/require-auth";
 
 export async function POST(request: Request) {
@@ -8,26 +15,34 @@ export async function POST(request: Request) {
   if (authError) return authError;
 
   const body = await request.json().catch(() => null) as {
-    autoEmailEnabled?: boolean;
-    autoEmailScheduleEnabled?: boolean;
-    autoEmailScheduleStart?: string;
-    autoEmailScheduleEnd?: string;
-    autoEmailDailyLimit?: number;
+    autoOutreachEnabled?: boolean;
+    emailEnabled?: boolean;
+    scheduleEnabled?: boolean;
+    scheduleStart?: string;
+    scheduleEnd?: string;
+    dailyLimit?: number;
+    outreachCity?: string;
+    outreachCategories?: string[];
+    outreachMaxPerCategory?: number;
   } | null;
   if (!body) return fail("E-SETTINGS-02", "Invalid operations settings request", 400);
 
   const settings = await saveOperationsSettings({
-    autoEmailEnabled: body.autoEmailEnabled === true,
-    autoEmailScheduleEnabled: body.autoEmailScheduleEnabled === true,
-    autoEmailScheduleStart: normalizeTimeValue(body.autoEmailScheduleStart, "20:00"),
-    autoEmailScheduleEnd: normalizeTimeValue(body.autoEmailScheduleEnd, "00:00"),
-    autoEmailDailyLimit: normalizeDailyLimit(String(body.autoEmailDailyLimit ?? ""))
+    autoOutreachEnabled: body.autoOutreachEnabled === true,
+    emailEnabled: body.emailEnabled === true,
+    scheduleEnabled: body.scheduleEnabled === true,
+    scheduleStart: normalizeTimeValue(body.scheduleStart, "20:00"),
+    scheduleEnd: normalizeTimeValue(body.scheduleEnd, "00:00"),
+    dailyLimit: normalizeDailyLimit(String(body.dailyLimit ?? "")),
+    outreachCity: normalizeOutreachCity(body.outreachCity),
+    outreachCategories: normalizeOutreachCategories(body.outreachCategories),
+    outreachMaxPerCategory: normalizeMaxPerCategory(String(body.outreachMaxPerCategory ?? ""))
   });
 
-  if (settings.autoEmailEnabled && !usesHostedAutomation()) {
-    await ensureAutomationRunning("settings save");
+  if (settings.autoOutreachEnabled && !usesHostedAutomation()) {
+    await ensureOutreachRunning("settings save");
   } else {
-    await disableAutomationStatus();
+    await disableOutreachStatus();
   }
 
   return ok(settings);

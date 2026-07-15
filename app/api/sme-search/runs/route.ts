@@ -38,7 +38,7 @@ const schema = z.object({
         "MANUAL_EXCLUDE"
       ]).optional(),
       franchiseStatus: z.enum(["INCLUDED", "EXCLUDED"]).optional(),
-      leadStatus: z.enum(["CAPTURED", "SAVED", "CONTACTED", "DO_NOT_CONTACT"]).optional(),
+      leadStatus: z.enum(["NEW", "QUALIFIED", "READY_TO_CONTACT", "CONTACTED", "REPLIED", "MEETING", "PROPOSAL_SENT", "NEGOTIATING", "WON", "LOST", "NURTURE", "DO_NOT_CONTACT"]).optional(),
       excludeDoNotContact: z.boolean().optional(),
       excludePreviouslyContacted: z.boolean().optional()
     })

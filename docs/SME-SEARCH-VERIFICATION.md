@@ -23,14 +23,21 @@ The browser check enables SMS/email dry-run mode, creates the existing debug SME
 1. SME Search renders with its full filter set.
 2. Google Places search returns a captured result.
 3. The selected SME opens the SMS composer.
-4. One SMS is sent in dry-run mode only.
-5. The sent entry is displayed in SMS history.
+4. One SMS is sent in dry-run mode only and appears in SMS history.
+5. The same captured SME opens the email composer without needing a legacy saved Lead.
+6. One email is sent in dry-run mode only and appears in Email history.
 
 The verified run completed successfully on 2026-07-15. Screenshots are generated locally and intentionally excluded from Git:
 
 - `test-results/sme-browser-verification/desktop-search.png`
+- `test-results/sme-browser-verification/scheduled-search-actions.png`
+- `test-results/sme-browser-verification/desktop-table-filters.png`
+- `test-results/sme-browser-verification/desktop-result-detail.png`
+- `test-results/sme-browser-verification/desktop-result-detail-footer.png`
 - `test-results/sme-browser-verification/mobile-search.png`
 - `test-results/sme-browser-verification/sms-history.png`
+- `test-results/sme-browser-verification/email-history.png`
+- `test-results/sme-browser-verification/dashboard-recent-sme-leads.png`
 
 ## Safety checks added in this release
 

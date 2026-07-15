@@ -15,15 +15,15 @@ export default async function DashboardPage() {
       iconPaths: ["M4 6h16v12H4Z", "M4 7l8 6 8-6"]
     },
     {
-      label: "Leads today",
+      label: "SME leads today",
       value: metrics.leadsToday,
-      footer: `Total leads: ${metrics.totalLeads}`,
+      footer: `Total SME leads: ${metrics.totalLeads}`,
       iconPaths: ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z", "M14 2v6h6", "M8 13h8", "M8 17h5"]
     },
     {
-      label: "Leads with email today",
+      label: "SME leads with email today",
       value: metrics.leadsWithEmailToday,
-      footer: `Total leads with email: ${metrics.leadsWithEmail}`,
+      footer: `Total SME leads with email: ${metrics.leadsWithEmail}`,
       iconPaths: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", "M12 12h.01"]
     }
   ];
@@ -35,15 +35,15 @@ export default async function DashboardPage() {
       iconPaths: ["M4 6h16v12H4Z", "M4 7l8 6 8-6"]
     },
     {
-      label: "Total leads",
+      label: "Total SME leads",
       value: metrics.totalLeads,
-      footer: `Leads today: ${metrics.leadsToday}`,
+      footer: `SME leads today: ${metrics.leadsToday}`,
       iconPaths: ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z", "M14 2v6h6", "M8 13h8", "M8 17h5"]
     },
     {
-      label: "Total leads with email",
+      label: "Total SME leads with email",
       value: metrics.leadsWithEmail,
-      footer: `Leads with email today: ${metrics.leadsWithEmailToday}`,
+      footer: `SME leads with email today: ${metrics.leadsWithEmailToday}`,
       iconPaths: ["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", "M12 12h.01"]
     }
   ];
@@ -56,14 +56,15 @@ export default async function DashboardPage() {
       </div>
       <DashboardMetricTabs dailyCards={dailyCards} totalCards={totalCards} />
       <section className="stack dashboard-recent-leads-section">
-        <h2>Recent leads</h2>
+        <h2>Recent SME leads</h2>
         <DashboardRecentLeadsTable
-          leads={metrics.recentLeads.map((lead) => ({
+          leads={metrics.recentSmeLeads.map((lead) => ({
             id: lead.id,
-            businessName: lead.businessName,
-            category: formatCategoryLabel(lead.category),
-            email: lead.email || "N/A",
-            collectedAt: lead.collectedAt.toLocaleString()
+            businessName: lead.displayName,
+            category: formatCategoryLabel(lead.primaryType),
+            email: lead.email || lead.lead?.email || "N/A",
+            collectedAt: lead.collectedAt.toLocaleString(),
+            href: "/sme-search"
           }))}
         />
       </section>

@@ -48,31 +48,42 @@ export function buildLeadWhere(filters: LeadFilters): Prisma.LeadWhereInput {
 export async function getDashboardMetrics() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const leadWithEmailWhere: Prisma.LeadWhereInput = {
-    email: { not: null },
-    NOT: { email: "" }
+  const smeWithEmailWhere: Prisma.SmeBusinessProfileWhereInput = {
+    OR: [
+      {
+        AND: [{ email: { not: null } }, { NOT: { email: "" } }]
+      },
+      {
+        lead: {
+          is: {
+            AND: [{ email: { not: null } }, { NOT: { email: "" } }]
+          }
+        }
+      }
+    ]
   };
-  const [totalLeads, leadsToday, leadsWithEmail, leadsWithEmailToday, emailsSent, emailsSentToday, recentLeads, lastJob, recentErrors] = await Promise.all([
-    prisma.lead.count(),
-    prisma.lead.count({ where: { collectedAt: { gte: today } } }),
-    prisma.lead.count({ where: leadWithEmailWhere }),
-    prisma.lead.count({
+  const [totalLeads, leadsToday, leadsWithEmail, leadsWithEmailToday, emailsSent, emailsSentToday, recentSmeLeads, lastJob, recentErrors] = await Promise.all([
+    prisma.smeBusinessProfile.count(),
+    prisma.smeBusinessProfile.count({ where: { collectedAt: { gte: today } } }),
+    prisma.smeBusinessProfile.count({ where: smeWithEmailWhere }),
+    prisma.smeBusinessProfile.count({
       where: {
-        ...leadWithEmailWhere,
+        ...smeWithEmailWhere,
         collectedAt: { gte: today }
       }
     }),
     prisma.emailLog.count({ where: { status: "sent" } }),
     prisma.emailLog.count({ where: { status: "sent", sentAt: { gte: today } } }),
-    prisma.lead.findMany({
-      orderBy: { collectedAt: "desc" },
+    prisma.smeBusinessProfile.findMany({
+      orderBy: [{ collectedAt: "desc" }, { id: "desc" }],
       take: 5,
       select: {
         id: true,
-        businessName: true,
-        category: true,
+        displayName: true,
+        primaryType: true,
         email: true,
-        collectedAt: true
+        collectedAt: true,
+        lead: { select: { email: true } }
       }
     }),
     prisma.searchJob.findFirst({ orderBy: { startedAt: "desc" } }),
@@ -85,7 +96,7 @@ export async function getDashboardMetrics() {
     leadsWithEmailToday,
     emailsSent,
     emailsSentToday,
-    recentLeads,
+    recentSmeLeads,
     duplicatesSkipped: lastJob?.totalDuplicates ?? 0,
     lastSearchTime: lastJob?.startedAt ?? null,
     recentErrors

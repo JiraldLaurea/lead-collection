@@ -68,17 +68,17 @@ describe("SME search modes", () => {
       expect(
         buildTextQuery({
           mode: "COMMERCIAL_ROAD",
-          category: "cafe",
+          category: "cafe_resto",
           roadName: "Aguirre Avenue",
           commercialArea: "BF Homes",
           city: "Paranaque"
         })
-      ).toBe("cafe in Aguirre Avenue, BF Homes, Paranaque");
+      ).toBe("cafe restaurant in Aguirre Avenue, BF Homes, Paranaque");
     });
 
     it("combines a keyword with the category", () => {
-      expect(buildTextQuery({ mode: "CITY_CATEGORY", keyword: "independent", category: "cafe", city: "Makati" })).toBe(
-        "independent cafe in Makati"
+      expect(buildTextQuery({ mode: "CITY_CATEGORY", keyword: "independent", category: "cafe_resto", city: "Makati" })).toBe(
+        "independent cafe restaurant in Makati"
       );
     });
 
@@ -100,7 +100,7 @@ describe("SME search modes", () => {
 
     await runDiscovery({
       mode: "MAP_RADIUS",
-      category: "restaurant",
+      category: "dental_clinic",
       latitude: 14.553,
       longitude: 121.024,
       radiusMeters: 450
@@ -109,7 +109,7 @@ describe("SME search modes", () => {
     const { url, body } = requestAt(0);
     expect(url).toContain("places:searchNearby");
     expect(body).toMatchObject({
-      includedTypes: ["restaurant"],
+      includedTypes: ["dentist"],
       locationRestriction: { circle: { center: { latitude: 14.553, longitude: 121.024 }, radius: 450 } }
     });
   });
@@ -139,7 +139,7 @@ describe("SME search modes", () => {
 
     await runDiscovery({
       mode: "COMMERCIAL_ROAD",
-      category: "cafe",
+      category: "cafe_resto",
       roadName: "Aguirre Avenue",
       commercialArea: "BF Homes",
       city: "Paranaque"
@@ -147,7 +147,7 @@ describe("SME search modes", () => {
 
     const { url, body } = requestAt(0);
     expect(url).toContain("places:searchText");
-    expect(body).toMatchObject({ textQuery: "cafe in Aguirre Avenue, BF Homes, Paranaque" });
+    expect(body).toMatchObject({ textQuery: "cafe restaurant in Aguirre Avenue, BF Homes, Paranaque" });
   });
 
   it("follows nextPageToken until maxResults is reached", async () => {

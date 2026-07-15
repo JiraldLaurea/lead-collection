@@ -6,7 +6,7 @@ import { requirePageAdmin, requireSmeSearchPage } from "@/lib/require-auth";
 import { getSmsBodyTemplate } from "@/lib/sms-template";
 import { getEmailBodyTemplate } from "@/lib/email-template";
 import { getLatestScheduledSmeSearchSnapshot, getScheduledSmeSearchSettings } from "@/lib/sme/scheduled-search";
-import { fixedSearchCities } from "@/lib/search-defaults";
+import { metroManilaCities } from "@/lib/philippines-locations";
 
 export default async function ScheduledSmeResultsPage({ searchParams }: { searchParams: Promise<{ completed?: string }> }) {
   await requirePageAdmin();
@@ -24,7 +24,7 @@ export default async function ScheduledSmeResultsPage({ searchParams }: { search
     })
   ]);
 
-  const cities = Array.from(new Set([...fixedSearchCities, ...zones.map((zone) => zone.city)])).sort();
+  const cities = metroManilaCities;
   const showCompletionToast = (await searchParams).completed === "1";
 
   return (

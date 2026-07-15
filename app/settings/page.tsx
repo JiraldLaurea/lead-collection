@@ -3,6 +3,7 @@ import { DebugSettingsPanel } from "@/components/DebugSettingsPanel";
 import { DoNotContactSettingsPanel } from "@/components/DoNotContactSettingsPanel";
 import { EmailTemplateSettingsForm } from "@/components/EmailTemplateSettingsForm";
 import { OperationsSettingsForm } from "@/components/OperationsSettingsForm";
+import { ResetDatabaseButton } from "@/components/ResetDatabaseButton";
 import { SettingPanelHeader } from "@/components/SettingPanelHeader";
 import { SmeSettingsForm } from "@/components/SmeSettingsForm";
 import { SmsTemplateSettingsForm } from "@/components/SmsTemplateSettingsForm";
@@ -10,6 +11,7 @@ import { getDebugSettings } from "@/lib/debug-settings";
 import { getEmailBodyTemplate, getEmailTemplateAttachmentMetadata } from "@/lib/email-template";
 import { isSmeSearchEnabled } from "@/lib/feature-flags";
 import { getOperationsSettings } from "@/lib/operations-settings";
+import { metroManilaCities } from "@/lib/philippines-locations";
 import { getSmsBodyTemplate } from "@/lib/sms-template";
 import { getSmeSettings } from "@/lib/sme/settings";
 import { prisma } from "@/lib/prisma";
@@ -46,7 +48,7 @@ export default async function SettingsPage() {
         <h1>Settings</h1>
         <p>Manage email and SMS defaults, saved lead data, and internal configuration.</p>
       </div>
-      <OperationsSettingsForm settings={operationsSettings} />
+      <OperationsSettingsForm settings={operationsSettings} cities={metroManilaCities} />
       <EmailTemplateSettingsForm initialBody={emailBodyTemplate} initialAttachment={emailTemplateAttachment} />
       <SmsTemplateSettingsForm initialBody={smsBodyTemplate} />
       <DoNotContactSettingsPanel
@@ -64,6 +66,7 @@ export default async function SettingsPage() {
         brandCount={brandCount}
       />
       <DeleteLeadsButton leadCount={leadCount} />
+      <ResetDatabaseButton />
       <DebugSettingsPanel settings={debugSettings} />
       <div className="panel settings-config-panel">
         <div className="settings-panel-body">

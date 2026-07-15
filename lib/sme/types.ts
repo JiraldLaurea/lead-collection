@@ -2,6 +2,20 @@ export type SearchMode = "COMMERCIAL_ROAD" | "CITY_CATEGORY" | "MAP_RADIUS" | "F
 
 export type BusinessStatus = "OPERATIONAL" | "CLOSED_TEMPORARILY" | "CLOSED_PERMANENTLY";
 
+export type SmeLeadStatus =
+  | "NEW"
+  | "QUALIFIED"
+  | "READY_TO_CONTACT"
+  | "CONTACTED"
+  | "REPLIED"
+  | "MEETING"
+  | "PROPOSAL_SENT"
+  | "NEGOTIATING"
+  | "WON"
+  | "LOST"
+  | "NURTURE"
+  | "DO_NOT_CONTACT";
+
 export type SearchRequest = {
   mode: SearchMode;
   city?: string;
@@ -27,7 +41,7 @@ export type SearchFilters = {
   businessStatus?: BusinessStatus;
   classification?: string;
   franchiseStatus?: "INCLUDED" | "EXCLUDED";
-  leadStatus?: "CAPTURED" | "SAVED" | "CONTACTED" | "DO_NOT_CONTACT";
+  leadStatus?: SmeLeadStatus;
   excludeDoNotContact?: boolean;
   excludePreviouslyContacted?: boolean;
 };

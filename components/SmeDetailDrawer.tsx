@@ -22,12 +22,36 @@ const overrideClasses: SmeClass[] = [
   "MANUAL_EXCLUDE"
 ];
 
+function readableReasonCode(code: string) {
+  return code
+    .toLocaleLowerCase()
+    .split("_")
+    .map((word) => word.charAt(0).toLocaleUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function missingEmailMessage(websiteUrl: string | null) {
+  try {
+    const url = new URL(websiteUrl || "");
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (["facebook.com", "instagram.com", "tiktok.com", "linkedin.com", "linktr.ee"].some((platform) => host === platform || host.endsWith(`.${platform}`))) {
+      return "Not found — this social-platform page may not expose its email to automated checks.";
+    }
+  } catch {
+    // A missing or malformed website is handled by the generic message below.
+  }
+  return "Not found yet";
+}
+
 export function SmeDetailDrawer({ result, onClose, onOverridden }: SmeDetailDrawerProps) {
   const { classification, score } = result;
   const [overrideClass, setOverrideClass] = useState(classification.effectiveClass);
   const [overrideReason, setOverrideReason] = useState("");
   const [overriding, setOverriding] = useState(false);
   const [overrideError, setOverrideError] = useState("");
+  // Search completion persists every result as an SME profile, which is the audit record
+  // used by the override API. A legacy Lead is optional for outreach, not for review.
+  const hasOverrideRecord = Boolean(result.providerPlaceId);
 
   async function applyOverride() {
     if (!overrideReason.trim() || overriding) return;
@@ -123,8 +147,8 @@ export function SmeDetailDrawer({ result, onClose, onOverridden }: SmeDetailDraw
               </div>
               <div className="detail-row">
                 <span>Email</span>
-                <strong>
-                  {result.email ? <a href={`mailto:${result.email}`}>{result.email}</a> : "Not found yet"}
+                <strong title={result.email ?? missingEmailMessage(result.websiteUrl)}>
+                  {result.email ? <a href={`mailto:${result.email}`}>{result.email}</a> : missingEmailMessage(result.websiteUrl)}
                 </strong>
               </div>
               <div className="detail-row">
@@ -154,11 +178,17 @@ export function SmeDetailDrawer({ result, onClose, onOverridden }: SmeDetailDraw
             </div>
 
             <div className="field-group sme-evidence">
-              <span>Score breakdown</span>
-              <ul className="sme-reason-list">
+              <div className="sme-evidence-heading">
+                <div>
+                  <span>Score breakdown</span>
+                  <p>How this business reached its lead score.</p>
+                </div>
+                <span className={scoreBandPillClassName(score.band)}>{score.total}/100</span>
+              </div>
+              <ul className="sme-reason-list sme-score-breakdown">
                 {score.factors.map((factor) => (
                   <li key={factor.key}>
-                    <code>
+                    <code className="sme-score-factor-label">
                       {factor.label}: {Math.round(factor.points)} / {factor.max}
                       {factor.unknown ? " · partly unknown" : ""}
                     </code>
@@ -176,11 +206,20 @@ export function SmeDetailDrawer({ result, onClose, onOverridden }: SmeDetailDraw
             </div>
 
             <div className="field-group sme-evidence">
-              <span>Why this classification</span>
-              <ul className="sme-reason-list">
+              <div className="sme-evidence-heading">
+                <div>
+                  <span>Why this classification</span>
+                  <p>Signals used to classify this business.</p>
+                </div>
+                <span className="status-pill status-pill-success">{smeClassLabel(classification.effectiveClass)}</span>
+              </div>
+              <ul className="sme-reason-list sme-classification-reasons">
                 {classification.reasons.map((reason) => (
                   <li key={reason.code}>
-                    <code>{reason.code}</code>
+                    <div className="sme-evidence-card-header">
+                      <strong>{readableReasonCode(reason.code)}</strong>
+                      <code>{reason.code}</code>
+                    </div>
                     <p>{reason.detail}</p>
                   </li>
                 ))}
@@ -193,7 +232,7 @@ export function SmeDetailDrawer({ result, onClose, onOverridden }: SmeDetailDraw
 
             <div className="field-group sme-evidence">
               <span>Correct this classification</span>
-              {result.savedLeadId === null ? (
+              {!hasOverrideRecord ? (
                 <span className="field-note">
                   Save this business first — an override needs a saved record to attach its audit trail
                   to.
@@ -247,11 +286,11 @@ export function SmeDetailDrawer({ result, onClose, onOverridden }: SmeDetailDraw
             <span />
             <div className="compose-modal-action-group">
               {result.googleMapsUri ? (
-                <a className="button secondary" href={result.googleMapsUri} target="_blank" rel="noreferrer noopener">
+                <a className="button primary-button" href={result.googleMapsUri} target="_blank" rel="noreferrer noopener">
                   Open in Google Maps
                 </a>
               ) : null}
-              <button type="button" onClick={onClose}>
+              <button type="button" className="secondary" onClick={onClose}>
                 Close
               </button>
             </div>

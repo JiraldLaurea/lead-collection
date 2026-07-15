@@ -9,9 +9,10 @@ const schema = z.object({
   zoneId: z.number().int().positive().nullable(),
   city: z.string().trim().max(100),
   category: z.string().trim().max(60),
+  categories: z.array(z.string().trim().max(60)).max(20),
   maxResults: z.number().int().min(1).max(60),
-  radiusMeters: z.number().int().min(50).max(50000),
-  localTime: z.string().regex(/^\d{2}:\d{2}$/)
+  maxPerCategory: z.number().int().min(1).max(60),
+  radiusMeters: z.number().int().min(50).max(50000)
 });
 
 export async function POST(request: Request) {

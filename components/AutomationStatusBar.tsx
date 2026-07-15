@@ -4,25 +4,25 @@ import { useEffect, useState } from "react";
 
 const dismissedStatusStorageKey = "lead-collection-dismissed-automation-status";
 
-type AutomationStatus = {
+type OutreachStatus = {
   running: boolean;
   phase: string;
   message: string;
   startedAt: string | null;
   updatedAt: string | null;
-  sentToday: number;
+  leadsContactedToday: number;
   target: number;
-  iteration: number;
-  searchesRun: number;
-  emailsFound: number;
-  emailsSent: number;
+  emailEnabled: boolean;
+  smsSent: number;
+  smsFailed: number;
+  emailSent: number;
   emailFailed: number;
 };
 
 const automationStatusUpdatedEvent = "automation-status-updated";
 
-export function AutomationStatusBar({ initialStatus = null }: { initialStatus?: AutomationStatus | null }) {
-  const [status, setStatus] = useState<AutomationStatus | null>(initialStatus);
+export function AutomationStatusBar({ initialStatus = null }: { initialStatus?: OutreachStatus | null }) {
+  const [status, setStatus] = useState<OutreachStatus | null>(initialStatus);
   const [dismissedStatusKey, setDismissedStatusKey] = useState<string | null>(null);
   const [dismissedStatusLoaded, setDismissedStatusLoaded] = useState(false);
 
@@ -33,7 +33,7 @@ export function AutomationStatusBar({ initialStatus = null }: { initialStatus?: 
 
   useEffect(() => {
     function handleStatusUpdate(event: Event) {
-      const customEvent = event as CustomEvent<AutomationStatus>;
+      const customEvent = event as CustomEvent<OutreachStatus>;
       setStatus(customEvent.detail);
     }
 
@@ -67,12 +67,13 @@ export function AutomationStatusBar({ initialStatus = null }: { initialStatus?: 
 
   if (!status || status.phase === "idle" || status.phase === "disabled") return null;
 
-  const statusKey = `${status.startedAt ?? "no-start"}:${status.phase}:${status.message}:${status.iteration}:${status.sentToday}:${status.target}`;
+  const failed = status.smsFailed + status.emailFailed;
+  const statusKey = `${status.startedAt ?? "no-start"}:${status.phase}:${status.message}:${status.leadsContactedToday}:${status.target}:${status.smsSent}:${status.emailSent}`;
   const summaryDismissed = dismissedStatusKey === statusKey;
   if (!status.running && summaryDismissed && status.phase !== "done") return null;
 
   const isPaused = !status.running && status.phase !== "done";
-  const statusLabel = status.running ? "Automation running" : status.phase === "done" ? "Automation done" : "Automation paused";
+  const statusLabel = status.running ? "Outreach running" : status.phase === "done" ? "Outreach done" : "Outreach paused";
   const showFinishedSummary = dismissedStatusLoaded && !status.running && status.phase === "done" && !summaryDismissed;
 
   function dismissStatus() {
@@ -88,7 +89,8 @@ export function AutomationStatusBar({ initialStatus = null }: { initialStatus?: 
           <span className="automation-status-main">{statusLabel}</span>
           <span>{status.message}</span>
           <span className="automation-status-metrics">
-            Sent {status.sentToday}/{status.target} today - Cycle {status.iteration} - {status.searchesRun} searches - {status.emailsFound} emails found - {status.emailFailed} failed
+            Contacted {status.leadsContactedToday}/{status.target} today - {status.smsSent} SMS sent
+            {status.emailEnabled ? ` - ${status.emailSent} emails sent` : ""} - {failed} failed
           </span>
           {!status.running ? (
             <button className="automation-status-close" type="button" onClick={dismissStatus} aria-label="Close automation status bar">
@@ -115,13 +117,13 @@ export function AutomationStatusBar({ initialStatus = null }: { initialStatus?: 
               </div>
             </div>
             <div className="automation-summary-body">
-              <AutomationSummaryCard label="Emails sent" value={status.emailsSent || status.sentToday} iconPaths={["M4 6h16v12H4Z", "M4 7l8 6 8-6"]} />
-              <AutomationSummaryCard label="Target Email" value={status.target} iconPaths={["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", "M12 12h.01"]} />
-              <AutomationSummaryCard label="Searches run" value={status.searchesRun} iconPaths={["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "M21 21l-4.3-4.3"]} />
-              <AutomationSummaryCard label="Emails found" value={status.emailsFound} iconPaths={["M4 6h16v12H4Z", "M4 7l8 6 8-6", "M8 14h8"]} />
+              <AutomationSummaryCard label="Leads contacted" value={status.leadsContactedToday} iconPaths={["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", "M12 12h.01"]} />
+              <AutomationSummaryCard label="Daily target" value={status.target} iconPaths={["M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z", "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", "M12 12h.01"]} />
+              <AutomationSummaryCard label="SMS sent" value={status.smsSent} iconPaths={["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"]} />
+              <AutomationSummaryCard label="Emails sent" value={status.emailSent} iconPaths={["M4 6h16v12H4Z", "M4 7l8 6 8-6"]} />
             </div>
             <div className="automation-summary-actions">
-              <a className="button secondary" href="/email-log" onClick={dismissStatus}>Email logs</a>
+              <a className="button secondary" href="/sms-log" onClick={dismissStatus}>SMS logs</a>
               <button className="button" type="button" onClick={dismissStatus}>OK</button>
             </div>
           </div>

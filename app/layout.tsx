@@ -4,7 +4,7 @@ import { AutomationStatusBar } from "@/components/AutomationStatusBar";
 import { Sidebar } from "@/components/Sidebar";
 import { SmeScheduledSearchLocalTick } from "@/components/SmeScheduledSearchLocalTick";
 import { isAdminAuthenticated } from "@/lib/auth";
-import { getAutomationStatus } from "@/lib/auto-email";
+import { getOutreachStatus } from "@/lib/auto-outreach";
 import { isSmeSearchEnabled } from "@/lib/feature-flags";
 import { ensureSmppBound } from "@/lib/sms";
 import "./globals.css";
@@ -28,7 +28,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   void ensureSmppBound();
 
   const isAuthenticated = await isAdminAuthenticated();
-  const automationStatus = isAuthenticated ? await getAutomationStatus() : null;
+  const automationStatus = isAuthenticated ? await getOutreachStatus() : null;
   const smeSearchEnabled = isAuthenticated ? await isSmeSearchEnabled() : false;
 
   return (

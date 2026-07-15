@@ -1,7 +1,6 @@
 import { SmeSearchWorkspace } from "@/components/SmeSearchWorkspace";
 import { prisma } from "@/lib/prisma";
-import { fixedSearchCities } from "@/lib/search-defaults";
-import { philippinesCityCoordinates } from "@/lib/philippines-locations";
+import { metroManilaCities } from "@/lib/philippines-locations";
 import { requirePageAdmin, requireSmeSearchPage } from "@/lib/require-auth";
 import { getSmsBodyTemplate } from "@/lib/sms-template";
 import { getEmailBodyTemplate } from "@/lib/email-template";
@@ -37,9 +36,7 @@ export default async function SmeSearchPage() {
     }
   });
 
-  const cities = Array.from(
-    new Set([...fixedSearchCities, ...Object.keys(philippinesCityCoordinates), ...zones.map((zone) => zone.city)])
-  ).sort();
+  const cities = metroManilaCities;
 
   return (
     <section className="stack leads-page">

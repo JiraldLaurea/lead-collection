@@ -26,6 +26,7 @@ type SmsComposerModalProps = {
 };
 
 const businessNamePlaceholder = "[business_name]";
+const recipientPreviewLimit = 5;
 
 /**
  * The SMS composer. Posts to the existing /api/leads/send-sms route, so there is one SMS
@@ -66,6 +67,8 @@ export function SmsComposerModal({ providerPlaceIds, initialBody, onClose, onSen
   }, [providerPlaceIds]);
 
   const finalRecipients = (screening?.sendable ?? []).filter((recipient) => !removed.includes(recipient.id));
+  const recipientPreview = finalRecipients.slice(0, recipientPreviewLimit);
+  const hiddenRecipientCount = Math.max(0, finalRecipients.length - recipientPreview.length);
   const preview = body.split(businessNamePlaceholder).join(finalRecipients[0]?.businessName ?? "Business Name");
   const length = measureSms(preview);
 
@@ -181,7 +184,7 @@ export function SmsComposerModal({ providerPlaceIds, initialBody, onClose, onSen
               <div className="compose-recipients">
                 <span>Recipients</span>
                 <div className="recipient-pills">
-                  {finalRecipients.map((recipient) => (
+                  {recipientPreview.map((recipient) => (
                     <span className="recipient-pill" key={recipient.id}>
                       {recipient.businessName}
                       <button
@@ -197,6 +200,11 @@ export function SmsComposerModal({ providerPlaceIds, initialBody, onClose, onSen
                       </button>
                     </span>
                   ))}
+                  {hiddenRecipientCount > 0 ? (
+                    <span className="recipient-pill recipient-pill-more" aria-label={`${hiddenRecipientCount} additional recipients`}>
+                      +{hiddenRecipientCount} more
+                    </span>
+                  ) : null}
                 </div>
               </div>
             ) : null}

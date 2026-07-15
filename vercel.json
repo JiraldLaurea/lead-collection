@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
-      "path": "/api/cron/auto-email",
+      "path": "/api/cron/auto-outreach",
       "schedule": "0 12 * * *"
     },
     {
