@@ -61,8 +61,8 @@ const navGroups = [
         )
       },
       {
-        href: "/compose-email",
-        label: "Compose Email",
+        href: "/email-log",
+        label: "Email",
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 6h16v12H4Z" />
@@ -72,34 +72,13 @@ const navGroups = [
         )
       },
       {
-        href: "/send-sms",
-        label: "Send SMS",
+        href: "/sms-log",
+        label: "SMS",
         icon: (
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 5h16v11H7l-3 3Z" />
             <path d="m13 9 4 3-4 3" />
             <path d="M7 12h9" />
-          </svg>
-        )
-      },
-      {
-        href: "/email-log",
-        label: "Email Log",
-        icon: (
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 6h16v12H4Z" />
-            <path d="m4 7 8 6 8-6" />
-          </svg>
-        )
-      },
-      {
-        href: "/sms-log",
-        label: "SMS Log",
-        icon: (
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M4 5h16v11H7l-3 3Z" />
-            <path d="M8 9h8" />
-            <path d="M8 13h5" />
           </svg>
         )
       },
@@ -140,9 +119,8 @@ export function Sidebar({ smeSearchEnabled = false }: { smeSearchEnabled?: boole
 
   const groups = navGroups.map((group) => {
     if (group.label !== "General" || !smeSearchEnabled) return group;
-    const leadsIndex = group.items.findIndex((item) => item.href === "/leads");
-    const items = [...group.items];
-    items.splice(leadsIndex + 1, 0, smeSearchNavItem);
+    const items = group.items.filter((item) => item.href !== "/leads");
+    items.unshift(smeSearchNavItem);
     return { ...group, items };
   });
 

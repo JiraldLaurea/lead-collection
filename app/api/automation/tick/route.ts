@@ -1,4 +1,4 @@
-import { ensureAutomationRunning, getAutomationStatus } from "@/lib/auto-email";
+import { ensureAutomationRunning, getAutomationStatus, usesHostedAutomation } from "@/lib/auto-email";
 import { ok } from "@/lib/http";
 import { getOperationsSettings } from "@/lib/operations-settings";
 import { requireApiAdmin } from "@/lib/require-auth";
@@ -10,7 +10,7 @@ export async function GET() {
   if (authError) return authError;
 
   const settings = await getOperationsSettings();
-  if (settings.autoEmailEnabled) {
+  if (settings.autoEmailEnabled && !usesHostedAutomation()) {
     await ensureAutomationRunning("browser polling");
   }
 

@@ -53,6 +53,10 @@ const globalForAutomation = globalThis as typeof globalThis & {
   leadCollectionAutomationState?: AutomationState;
 };
 
+export function usesHostedAutomation() {
+  return process.env.APP_MODE === "hosted" || process.env.VERCEL === "1";
+}
+
 function getState() {
   if (!globalForAutomation.leadCollectionAutomationState) {
     globalForAutomation.leadCollectionAutomationState = { status: initialStatus, promise: null, promiseMode: null };
@@ -73,6 +77,19 @@ export async function getAutomationStatus() {
 }
 
 export async function ensureAutomationRunning(reason = "settings") {
+  if (usesHostedAutomation()) {
+    const settings = await getOperationsSettings();
+    updateStatus({
+      running: false,
+      phase: settings.autoEmailEnabled ? "idle" : "disabled",
+      message: settings.autoEmailEnabled
+        ? "Hosted automation is scheduled through the protected cron route."
+        : "Automatic email sending is disabled.",
+      sentToday: await countEmailsSentToday(),
+      target: settings.autoEmailDailyLimit
+    });
+    return getState().status;
+  }
   const state = getState();
   if (state.promise) return state.status;
 

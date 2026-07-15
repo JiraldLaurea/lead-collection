@@ -19,7 +19,7 @@ type Screening = {
 };
 
 type SmsComposerModalProps = {
-  leadIds: number[];
+  providerPlaceIds: string[];
   initialBody: string;
   onClose: () => void;
   onSent: (sent: number, failed: number) => void;
@@ -32,7 +32,7 @@ const businessNamePlaceholder = "[business_name]";
  * provider integration and one send history — SME Search and the Leads table both go through
  * it. Nothing is ever sent without the user confirming the final recipient list.
  */
-export function SmsComposerModal({ leadIds, initialBody, onClose, onSent }: SmsComposerModalProps) {
+export function SmsComposerModal({ providerPlaceIds, initialBody, onClose, onSent }: SmsComposerModalProps) {
   const [body, setBody] = useState(initialBody);
   const [screening, setScreening] = useState<Screening | null>(null);
   const [removed, setRemoved] = useState<number[]>([]);
@@ -46,10 +46,10 @@ export function SmsComposerModal({ leadIds, initialBody, onClose, onSent }: SmsC
 
     async function screen() {
       setLoading(true);
-      const response = await fetch("/api/leads/sms-screening", {
+      const response = await fetch("/api/sme-search/sms-screening", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadIds })
+        body: JSON.stringify({ providerPlaceIds })
       });
       const payload = await response.json();
       if (cancelled) return;
@@ -63,7 +63,7 @@ export function SmsComposerModal({ leadIds, initialBody, onClose, onSent }: SmsC
     return () => {
       cancelled = true;
     };
-  }, [leadIds]);
+  }, [providerPlaceIds]);
 
   const finalRecipients = (screening?.sendable ?? []).filter((recipient) => !removed.includes(recipient.id));
   const preview = body.split(businessNamePlaceholder).join(finalRecipients[0]?.businessName ?? "Business Name");
@@ -90,10 +90,10 @@ export function SmsComposerModal({ leadIds, initialBody, onClose, onSent }: SmsC
     setSending(true);
     setError("");
 
-    const response = await fetch("/api/leads/send-sms", {
+    const response = await fetch("/api/sme-search/send-sms", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leadIds: finalRecipients.map((recipient) => recipient.id), body })
+      body: JSON.stringify({ businessIds: finalRecipients.map((recipient) => recipient.id), body })
     });
     const payload = await response.json();
     setSending(false);
@@ -152,6 +152,11 @@ export function SmsComposerModal({ leadIds, initialBody, onClose, onSent }: SmsC
                 {summary.invalidNumber > 0 ? (
                   <span className="sme-summary-chip">
                     <strong>{summary.invalidNumber}</strong> invalid
+                  </span>
+                ) : null}
+                {summary.requiresReview > 0 ? (
+                  <span className="sme-summary-chip">
+                    <strong>{summary.requiresReview}</strong> need review
                   </span>
                 ) : null}
                 {summary.duplicate > 0 ? (

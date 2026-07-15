@@ -33,7 +33,7 @@ export async function createAdminSession() {
   jar.set(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.COOKIE_SECURE === "true",
+    secure: process.env.COOKIE_SECURE === "true" || process.env.VERCEL === "1",
     path: "/",
     maxAge: 60 * 60 * 8
   });

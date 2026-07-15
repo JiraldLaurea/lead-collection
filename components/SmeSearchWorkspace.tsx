@@ -1,20 +1,25 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import Checkbox from "@mui/material/Checkbox";
 import { LoadingModal } from "@/components/LoadingModal";
 import { SmeDetailDrawer } from "@/components/SmeDetailDrawer";
 import { SmsComposerModal } from "@/components/SmsComposerModal";
+import { SmeEmailComposerModal } from "@/components/SmeEmailComposerModal";
+import { SmeScheduledSearchButton } from "@/components/SmeScheduledSearchSettingsForm";
 import { Snackbar } from "@/components/Snackbar";
 import { TableStatusRow } from "@/components/TableStatusRow";
 import { smeCategories } from "@/lib/sme/categories";
 import { scoreBandPillClassName, smeClassLabel, smeClassPillClassName } from "@/lib/sme/labels";
 import type { SmeSearchResult } from "@/lib/sme/run-search";
 import type { SearchMode, SearchRunSummary } from "@/lib/sme/types";
+import type { ScheduledSmeSearchSettings } from "@/lib/sme/scheduled-search";
 
 type SmeSearchWorkspaceProps = {
   cities: string[];
   zones: {
+    id: number;
     city: string;
     commercialArea: string;
     roadName: string;
@@ -24,6 +29,17 @@ type SmeSearchWorkspaceProps = {
     priority: string;
   }[];
   smsBodyTemplate: string;
+  emailBodyTemplate: string;
+  initialResults: SmeSearchResult[];
+  scheduledSearch: {
+    searchRunId: number;
+    completedAt: string;
+    zoneLabel: string;
+    resultCount: number;
+    summary: SearchRunSummary;
+  } | null;
+  scheduledSearchSettings: ScheduledSmeSearchSettings;
+  showSearchForm?: boolean;
 };
 
 const modes: { value: SearchMode; label: string; hint: string }[] = [
@@ -33,7 +49,7 @@ const modes: { value: SearchMode; label: string; hint: string }[] = [
   { value: "FREE_TEXT", label: "Free text", hint: "Search a natural-language query." }
 ];
 
-export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearchWorkspaceProps) {
+export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate, emailBodyTemplate, initialResults, scheduledSearch, scheduledSearchSettings, showSearchForm = true }: SmeSearchWorkspaceProps) {
   const [mode, setMode] = useState<SearchMode>("COMMERCIAL_ROAD");
   const [zoneKey, setZoneKey] = useState("");
   const [city, setCity] = useState("");
@@ -49,26 +65,55 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
   const [maxReviewCount, setMaxReviewCount] = useState("");
   const [hasPhone, setHasPhone] = useState("");
   const [hasWebsite, setHasWebsite] = useState("");
+  const [businessStatus, setBusinessStatus] = useState("");
+  const [classification, setClassification] = useState("");
+  const [franchiseStatus, setFranchiseStatus] = useState("");
+  const [leadStatus, setLeadStatus] = useState("");
   const [smeOnly, setSmeOnly] = useState(true);
   const [excludeDoNotContact, setExcludeDoNotContact] = useState(true);
   const [excludePreviouslyContacted, setExcludePreviouslyContacted] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [results, setResults] = useState<SmeSearchResult[] | null>(null);
-  const [summary, setSummary] = useState<SearchRunSummary | null>(null);
+  const [results, setResults] = useState<SmeSearchResult[] | null>(initialResults);
+  const [summary, setSummary] = useState<SearchRunSummary | null>(showSearchForm ? null : scheduledSearch?.summary ?? null);
   const [reviewCount, setReviewCount] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
+  const [pageSize, setPageSize] = useState<50 | 100 | 200>(50);
+  const [currentPage, setCurrentPage] = useState(1);
   const [detail, setDetail] = useState<SmeSearchResult | null>(null);
-  const [searchRunId, setSearchRunId] = useState<number | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [findingEmails, setFindingEmails] = useState(false);
   const [notice, setNotice] = useState("");
-  const [composerLeadIds, setComposerLeadIds] = useState<number[] | null>(null);
+  const [composerPlaceIds, setComposerPlaceIds] = useState<string[] | null>(null);
+  const [emailRecipients, setEmailRecipients] = useState<{ id: number; businessName: string }[] | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const selectedZone = zones.find(
     (zone) => `${zone.city}|${zone.commercialArea}|${zone.roadName}` === zoneKey
   );
+
+  async function discoverResultEmails(candidates: SmeSearchResult[]) {
+    const pending = candidates.filter((result) => !result.email && result.websiteUrl);
+    if (pending.length === 0) return;
+    setFindingEmails(true);
+    try {
+      const response = await fetch("/api/sme-search/email-discovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerPlaceIds: pending.map((result) => result.providerPlaceId) })
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.success) return;
+      const emails = new Map<string, string>(
+        payload.data.results
+          .filter((item: { email: string | null }): item is { providerPlaceId: string; email: string } => Boolean(item.email))
+          .map((item: { providerPlaceId: string; email: string }) => [item.providerPlaceId, item.email])
+      );
+      setResults((current) => (current ?? []).map((result) => emails.has(result.providerPlaceId) ? { ...result, email: emails.get(result.providerPlaceId) } : result));
+    } finally {
+      setFindingEmails(false);
+    }
+  }
 
   // Only businesses a human may safely bulk-contact are shown when "SME only" is on.
   // Highest score first, so the leads worth calling are at the top of the page.
@@ -80,6 +125,9 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
     )
     .slice()
     .sort((left, right) => right.score.total - left.score.total);
+  const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
+  const activePage = Math.min(currentPage, totalPages);
+  const pageResults = visible.slice((activePage - 1) * pageSize, activePage * pageSize);
 
   async function search(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -93,6 +141,7 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
     setLoading(true);
     setError("");
     setSelected([]);
+    setCurrentPage(1);
 
     const payload: Record<string, unknown> = {
       mode,
@@ -103,6 +152,10 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
         maxReviewCount: maxReviewCount ? Number(maxReviewCount) : undefined,
         hasPhone: hasPhone === "" ? undefined : hasPhone === "true",
         hasWebsite: hasWebsite === "" ? undefined : hasWebsite === "true",
+        businessStatus: businessStatus || undefined,
+        classification: classification || undefined,
+        franchiseStatus: franchiseStatus || undefined,
+        leadStatus: leadStatus || undefined,
         excludeDoNotContact,
         excludePreviouslyContacted
       }
@@ -154,8 +207,8 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
 
       setResults(data.data.results);
       setSummary(data.data.summary);
-      setSearchRunId(data.data.searchRunId ?? null);
       setReviewCount(data.data.needsReview?.length ?? 0);
+      void discoverResultEmails(data.data.results);
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError("Search failed. Please try again.");
@@ -168,80 +221,83 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
   }
 
   const selectedResults = (results ?? []).filter((result) => selected.includes(result.providerPlaceId));
+  const selectedEmailRecipients = selectedResults.flatMap((result) =>
+    result.savedLeadId && result.email ? [{ id: result.savedLeadId, businessName: result.displayName }] : []
+  );
+  const selectedProviderPlaceIds = selectedResults.map((result) => result.providerPlaceId);
 
-  /**
-   * Saves the selected candidates and returns their lead IDs. Saving never sends anything —
-   * SMS is always a separate, explicitly confirmed step.
-   */
-  async function saveSelected(): Promise<number[] | null> {
-    if (selectedResults.length === 0 || saving) return null;
-    setSaving(true);
-    setError("");
-
-    try {
-      const response = await fetch("/api/sme-search/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ searchRunId: searchRunId ?? undefined, results: selectedResults })
-      });
-      const payload = await response.json();
-
-      if (!response.ok || !payload.success) {
-        setError(payload.error?.message || "Unable to save the selected businesses.");
-        return null;
-      }
-
-      const { created, linked, skipped, leadIds } = payload.data;
-      const parts = [`${created} saved`];
-      if (linked > 0) parts.push(`${linked} already existed`);
-      if (skipped.length > 0) parts.push(`${skipped.length} skipped (needs review)`);
-      setNotice(parts.join(" · "));
-
-      // Reflect "Saved" in the table without re-running (and re-paying for) the search.
-      const savedIds = new Set(selectedResults.map((result) => result.providerPlaceId));
-      setResults((current) =>
-        (current ?? []).map((result) =>
-          savedIds.has(result.providerPlaceId) && result.savedLeadId === null
-            ? { ...result, savedLeadId: -1 }
-            : result
-        )
-      );
-
-      return leadIds as number[];
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function saveAndCompose() {
-    const leadIds = await saveSelected();
-    if (!leadIds || leadIds.length === 0) {
-      if (leadIds) setError("None of the selected businesses could be saved as leads.");
+  function openSmsComposer() {
+    if (selectedProviderPlaceIds.length === 0) {
+      setError("Select at least one business before composing an SMS.");
       return;
     }
-    setComposerLeadIds(leadIds);
+    setComposerPlaceIds(selectedProviderPlaceIds);
+  }
+
+  function canSelect(result: SmeSearchResult) {
+    return !result.doNotContact && Boolean(result.phoneNumber || result.email);
+  }
+
+  function selectionBlockReason(result: SmeSearchResult) {
+    if (result.doNotContact) return "This business is on the Do Not Contact list.";
+    return "An email address or phone number is required before this business can be selected.";
   }
 
   function toggle(placeId: string) {
+    const result = visible.find((item) => item.providerPlaceId === placeId);
+    if (!result || !canSelect(result)) return;
     setSelected((current) =>
       current.includes(placeId) ? current.filter((id) => id !== placeId) : [...current, placeId]
     );
   }
 
-  function toggleAllVisible() {
-    const selectable = visible.filter((result) => !result.doNotContact).map((result) => result.providerPlaceId);
-    const allSelected = selectable.length > 0 && selectable.every((id) => selected.includes(id));
-    setSelected(allSelected ? [] : selectable);
+  // Do Not Contact businesses are excluded from selection and checked again by the server
+  // before sending, so a bulk action cannot accidentally include a suppressed recipient.
+  function toggleAllOnPage() {
+    const selectable = pageResults.filter(canSelect).map((result) => result.providerPlaceId);
+    setSelected((current) => {
+      const allPageResultsSelected = selectable.length > 0 && selectable.every((id) => current.includes(id));
+
+      return allPageResultsSelected
+        ? current.filter((id) => !selectable.includes(id))
+        : Array.from(new Set([...current, ...selectable]));
+    });
   }
 
-  const selectableIds = visible.filter((result) => !result.doNotContact).map((result) => result.providerPlaceId);
-  const allSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.includes(id));
-  const someSelected = selected.length > 0 && !allSelected;
+  const selectablePageIds = pageResults.filter(canSelect).map((result) => result.providerPlaceId);
+  const allSelected = selectablePageIds.length > 0 && selectablePageIds.every((id) => selected.includes(id));
+  const someSelected = selectablePageIds.some((id) => selected.includes(id)) && !allSelected;
+
+  function exportVisibleCsv() {
+    const rows = visible.map((result) => ({
+      score: result.score.total,
+      band: result.score.band,
+      business_name: result.displayName,
+      category: result.primaryType ?? "",
+      location: result.formattedAddress ?? "",
+      phone: result.phoneNumber ?? "",
+      email: result.email ?? "",
+      website: result.websiteUrl ?? "",
+      rating: result.rating ?? "",
+      review_count: result.reviewCount ?? "",
+      sme_status: smeClassLabel(result.classification.effectiveClass),
+      lead_status: result.savedLeadId ? "Lead saved" : "Captured"
+    }));
+    const headers = Object.keys(rows[0] ?? { score: "" });
+    const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csv = [headers.join(","), ...rows.map((row) => headers.map((key) => escape(row[key as keyof typeof row])).join(","))].join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sme-search-results-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <>
       {loading ? <LoadingModal label="Searching Google Places" /> : null}
-      {saving ? <LoadingModal label="Saving leads" /> : null}
+      {findingEmails ? <LoadingModal label="Finding emails" /> : null}
       {error ? <Snackbar message={error} type="error" onDismiss={() => setError("")} /> : null}
       {notice ? <Snackbar message={notice} type="success" onDismiss={() => setNotice("")} /> : null}
       {detail ? (
@@ -260,20 +316,31 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
           }}
         />
       ) : null}
-      {composerLeadIds ? (
+      {composerPlaceIds ? (
         <SmsComposerModal
-          leadIds={composerLeadIds}
+          providerPlaceIds={composerPlaceIds}
           initialBody={smsBodyTemplate}
-          onClose={() => setComposerLeadIds(null)}
+          onClose={() => setComposerPlaceIds(null)}
           onSent={(sent, failed) => {
-            setComposerLeadIds(null);
+            setComposerPlaceIds(null);
             setSelected([]);
             setNotice(`Sent ${sent} SMS message${sent === 1 ? "" : "s"}${failed > 0 ? `, ${failed} failed` : ""}.`);
           }}
         />
       ) : null}
+      {emailRecipients ? (
+        <SmeEmailComposerModal
+          recipients={emailRecipients}
+          initialBody={emailBodyTemplate}
+          onClose={() => setEmailRecipients(null)}
+          onSent={(sent, failed) => {
+            setEmailRecipients(null);
+            setNotice(`Sent ${sent} email${sent === 1 ? "" : "s"}${failed ? `, ${failed} failed` : ""}.`);
+          }}
+        />
+      ) : null}
 
-      <form className="panel settings-panel" onSubmit={search}>
+      {showSearchForm ? <form className="panel settings-panel" onSubmit={search}>
         <div className="settings-panel-body">
           <h2 className="panel-title">SME Business Search</h2>
 
@@ -397,6 +464,46 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
                 <option value="false">No</option>
               </select>
             </label>
+            <label>
+              Business status
+              <select value={businessStatus} onChange={(event) => setBusinessStatus(event.target.value)}>
+                <option value="">Any</option>
+                <option value="OPERATIONAL">Operational</option>
+                <option value="CLOSED_TEMPORARILY">Temporarily closed</option>
+                <option value="CLOSED_PERMANENTLY">Permanently closed</option>
+              </select>
+            </label>
+            <label>
+              SME classification
+              <select value={classification} onChange={(event) => setClassification(event.target.value)}>
+                <option value="">Any</option>
+                <option value="INDEPENDENT_SME">Independent SME</option>
+                <option value="LOCAL_SME_CHAIN">Local SME chain</option>
+                <option value="MANUAL_REVIEW">Needs review</option>
+                <option value="LARGE_CHAIN">Large chain</option>
+                <option value="FRANCHISE_EXCLUDED">Franchise excluded</option>
+                <option value="MANUAL_INCLUDE">Manually included</option>
+                <option value="MANUAL_EXCLUDE">Manually excluded</option>
+              </select>
+            </label>
+            <label>
+              Franchise status
+              <select value={franchiseStatus} onChange={(event) => setFranchiseStatus(event.target.value)}>
+                <option value="">Any</option>
+                <option value="INCLUDED">Include candidates</option>
+                <option value="EXCLUDED">Excluded franchises / chains</option>
+              </select>
+            </label>
+            <label>
+              Lead status
+              <select value={leadStatus} onChange={(event) => setLeadStatus(event.target.value)}>
+                <option value="">Any</option>
+                <option value="CAPTURED">Captured, not saved</option>
+                <option value="SAVED">Saved lead</option>
+                <option value="CONTACTED">Previously contacted</option>
+                <option value="DO_NOT_CONTACT">Do not contact</option>
+              </select>
+            </label>
           </div>
 
           <div className="settings-template-helper">
@@ -429,7 +536,7 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
             {loading ? "Searching..." : "Search"}
           </button>
         </div>
-      </form>
+      </form> : null}
 
       {summary ? (
         <div className="sme-summary">
@@ -456,90 +563,147 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
         </div>
       ) : null}
 
+      {scheduledSearch && showSearchForm ? (
+        <div className="scheduled-results-banner">
+          <div>
+            <strong>Latest scheduled search</strong>
+            <span>{scheduledSearch.resultCount} Grade A result{scheduledSearch.resultCount === 1 ? "" : "s"} from {scheduledSearch.zoneLabel} · {new Date(scheduledSearch.completedAt).toLocaleString()}</span>
+          </div>
+          <Link href="/sme-search/scheduled" className="scheduled-results-button">
+            View scheduled results
+            <span aria-hidden="true">→</span>
+          </Link>
+        </div>
+      ) : null}
+
       {results ? (
-        <div className="table-actions">
-          <button
-            type="button"
-            className="secondary"
-            disabled={selected.length === 0 || saving}
-            onClick={saveSelected}
-          >
-            Save selected{selected.length > 0 ? ` (${selected.length})` : ""}
-          </button>
-          <button type="button" disabled={selected.length === 0 || saving} onClick={saveAndCompose}>
-            Save &amp; open SMS composer
-          </button>
+        <div className="table-actions sme-table-actions">
+          <div>
+            <SmeScheduledSearchButton settings={scheduledSearchSettings} zones={zones} cities={cities} />
+            <button type="button" className="secondary" disabled={selected.length === 0 || findingEmails} onClick={openSmsComposer}>
+              Compose SMS{selected.length > 0 ? ` (${selected.length})` : ""}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={selectedEmailRecipients.length === 0}
+              onClick={() => setEmailRecipients(selectedEmailRecipients)}
+              title={selectedEmailRecipients.length === 0 ? "Selected businesses need a saved email address before they can receive email." : undefined}
+            >
+              Compose Email
+            </button>
+          </div>
+          <button type="button" className="secondary" disabled={visible.length === 0} onClick={exportVisibleCsv}>Export CSV</button>
         </div>
       ) : null}
 
       {results ? (
         <div className="table-frame">
-          <div className="table-scroll">
-            <table className="leads-table">
+          <div className="table-scroll sme-results-scroll">
+            <table className="sme-results-table">
               <thead>
                 <tr>
-                  <th className="select-cell">
+                  <th
+                    className="select-cell"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (selectablePageIds.length > 0) toggleAllOnPage();
+                    }}
+                  >
                     <span className="checkbox-hit-area">
                       <Checkbox
-                        aria-label="Select all results"
+                        aria-label="Select all results on this page"
                         size="small"
                         checked={allSelected}
                         indeterminate={someSelected}
-                        disabled={selectableIds.length === 0}
-                        onChange={toggleAllVisible}
+                        disabled={selectablePageIds.length === 0}
+                        onChange={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggleAllOnPage();
+                        }}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            toggleAllOnPage();
+                          }
+                        }}
                       />
                     </span>
                   </th>
-                  <th>Score</th>
                   <th>Business</th>
-                  <th>Category</th>
                   <th>Location</th>
-                  <th>Rating</th>
                   <th>Contact</th>
-                  <th>SME status</th>
+                  <th>Score &amp; SME status</th>
                   <th>Status</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                <TableStatusRow colSpan={10} itemCount={visible.length} selectedCount={selected.length} itemLabel="result" />
+                <TableStatusRow colSpan={6} itemCount={visible.length} selectedCount={selected.length} itemLabel="result" />
                 {visible.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="muted">
+                    <td colSpan={6} className="muted">
                       No results. Try a wider radius, another category, or turn off &quot;SME only&quot; to see
                       excluded franchises.
                     </td>
                   </tr>
                 ) : (
-                  visible.map((result) => (
-                    <tr key={result.providerPlaceId}>
-                      <td className="select-cell">
-                        <span className="checkbox-hit-area">
+                  pageResults.map((result) => (
+                    <tr
+                      key={result.providerPlaceId}
+                      className={`clickable-row ${selected.includes(result.providerPlaceId) ? "selected-row" : ""}`}
+                      tabIndex={0}
+                      onClick={() => setDetail(result)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setDetail(result);
+                        }
+                      }}
+                    >
+                      <td
+                        className="select-cell"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          toggle(result.providerPlaceId);
+                        }}
+                      >
+                        <span className="checkbox-hit-area" title={canSelect(result) ? undefined : selectionBlockReason(result)}>
                           <Checkbox
                             aria-label={`Select ${result.displayName}`}
                             size="small"
                             checked={selected.includes(result.providerPlaceId)}
-                            disabled={result.doNotContact}
-                            onChange={() => toggle(result.providerPlaceId)}
+                            disabled={!canSelect(result)}
+                            onChange={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggle(result.providerPlaceId);
+                            }}
+                            onKeyDown={(event) => {
+                              event.stopPropagation();
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                toggle(result.providerPlaceId);
+                              }
+                            }}
                           />
                         </span>
                       </td>
-                      <td>
-                        <span className={scoreBandPillClassName(result.score.band)}>
-                          {result.score.total} · {result.score.band}
-                        </span>
+                      <td className="sme-business-cell">
+                        <strong>{result.displayName}</strong>
+                        <span>{result.primaryType ?? "Uncategorised"}</span>
                       </td>
-                      <td>{result.displayName}</td>
-                      <td>{result.primaryType ?? "—"}</td>
-                      <td>{result.formattedAddress ?? "—"}</td>
-                      <td>{result.rating ? `${result.rating} (${result.reviewCount ?? 0})` : "—"}</td>
-                      <td>
+                      <td className="sme-location-cell" title={result.formattedAddress ?? undefined}>{result.formattedAddress ?? "—"}</td>
+                      <td className="sme-contact-cell">
                         <span className="sme-contact-icons">
                           <span className={result.phoneNumber ? "present" : undefined}>Phone</span>
                           <span className={result.websiteUrl ? "present" : undefined}>Web</span>
                         </span>
+                        {result.rating ? <small>{result.rating} ({result.reviewCount ?? 0})</small> : null}
                       </td>
-                      <td>
+                      <td className="sme-status-cell">
+                        <span className={scoreBandPillClassName(result.score.band)}>{result.score.total} · {result.score.band}</span>
                         <span className={smeClassPillClassName(result.classification.effectiveClass)}>
                           {smeClassLabel(result.classification.effectiveClass)}
                         </span>
@@ -548,15 +712,10 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
                         {result.doNotContact ? (
                           <span className="status-pill status-pill-muted">Do not contact</span>
                         ) : result.savedLeadId ? (
-                          <span className="status-pill status-pill-success">Saved</span>
+                          <span className="status-pill status-pill-success">Lead saved</span>
                         ) : (
-                          <span className="muted">New</span>
+                          <span className="muted">Captured</span>
                         )}
-                      </td>
-                      <td>
-                        <button type="button" className="secondary compact-button" onClick={() => setDetail(result)}>
-                          Details
-                        </button>
                       </td>
                     </tr>
                   ))
@@ -564,6 +723,35 @@ export function SmeSearchWorkspace({ cities, zones, smsBodyTemplate }: SmeSearch
               </tbody>
             </table>
           </div>
+          {visible.length > 0 ? (
+            <div className="table-pagination sme-table-pagination">
+              <span className="muted">
+                Page {activePage} of {totalPages}
+              </span>
+              <div className="table-pagination-controls">
+                <label className="table-page-size">
+                  Rows
+                  <select
+                    value={pageSize}
+                    onChange={(event) => {
+                      setPageSize(Number(event.target.value) as 50 | 100 | 200);
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={200}>200</option>
+                  </select>
+                </label>
+                <button type="button" className="secondary" disabled={activePage <= 1} onClick={() => setCurrentPage(activePage - 1)}>
+                  Previous
+                </button>
+                <button type="button" className="secondary" disabled={activePage >= totalPages} onClick={() => setCurrentPage(activePage + 1)}>
+                  Next
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </>

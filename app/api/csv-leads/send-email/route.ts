@@ -7,6 +7,7 @@ import { fail } from "@/lib/http";
 import { buildLeadEmailContent, sendLeadEmail } from "@/lib/mailer";
 import { prisma } from "@/lib/prisma";
 import { requireApiAdmin } from "@/lib/require-auth";
+import { screenEmailRecipients } from "@/lib/email-suppression";
 
 const requestSchema = z.object({
   leadIds: z.array(z.number().int().positive()).min(1).max(5000),
@@ -37,8 +38,14 @@ export async function POST(request: Request) {
       where: { id: { in: parsed.data.leadIds }, email: { not: null } },
       select: { id: true, businessName: true, email: true }
     });
-    const recipients = leads.filter((lead): lead is typeof lead & { email: string } => Boolean(lead.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email)));
-    if (recipients.length === 0) return fail("E-CSV-EMAIL-03", "No selected leads have a valid email address.", 400);
+    const screening = await screenEmailRecipients(leads);
+    const recipients = screening.sendable;
+    if (recipients.length === 0) {
+      return fail("E-CSV-EMAIL-03", "No selected leads have a contactable email address.", 400, {
+        screening: screening.summary,
+        excluded: screening.excluded
+      });
+    }
 
     const debugSettings = await getDebugSettings();
     const encoder = new TextEncoder();

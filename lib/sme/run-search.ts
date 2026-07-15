@@ -10,6 +10,7 @@ import { normalizeWebsiteHost } from "@/lib/sme/normalize-name";
 import { scoreLead, type LeadScore } from "@/lib/sme/score";
 import { runDiscovery } from "@/lib/sme/search";
 import { getSmeSettings } from "@/lib/sme/settings";
+import { persistSmeSearchResults } from "@/lib/sme/persist-results";
 import type { BusinessCandidate, SearchFilters, SearchRequest, SearchRunSummary } from "@/lib/sme/types";
 
 export type SmeSearchResult = {
@@ -26,6 +27,8 @@ export type SmeSearchResult = {
   reviewCount: number | null;
   businessStatus: string | null;
   googleMapsUri: string | null;
+  /** Available only after this SME result has been explicitly saved as a Lead. */
+  email?: string | null;
   classification: Classification;
   score: LeadScore;
   /** Set when this business is already saved as a lead. */
@@ -117,6 +120,11 @@ export async function runSmeSearch(
       errors: 0
     };
 
+    // Capture every completed SME result in its own profile store. This is deliberately
+    // separate from Lead creation: a result remains available after a refresh, but becomes a
+    // Lead only when a user chooses Save selected.
+    await persistSmeSearchResults(filtered, JSON.stringify(request));
+
     await prisma.smeSearchRun.update({
       where: { id: run.id },
       data: {
@@ -161,7 +169,7 @@ async function toResults(
   const leadPlaceIds = candidates.map((candidate) => toLeadPlaceId(candidate.providerPlaceId));
   const savedLeads = await prisma.lead.findMany({
     where: { placeId: { in: leadPlaceIds } },
-    select: { id: true, placeId: true, smsLogs: { select: { id: true }, take: 1 }, emailLogs: { select: { id: true }, take: 1 } }
+    select: { id: true, placeId: true, email: true, smsLogs: { select: { id: true }, take: 1 }, emailLogs: { select: { id: true }, take: 1 } }
   });
   const savedByPlaceId = new Map(savedLeads.map((lead) => [lead.placeId, lead]));
 
@@ -208,6 +216,7 @@ async function toResults(
       reviewCount: candidate.userRatingCount,
       businessStatus: candidate.businessStatus,
       googleMapsUri: candidate.googleMapsUri,
+      email: lead?.email ?? null,
       classification,
       score,
       savedLeadId: lead?.id ?? null,
@@ -226,6 +235,14 @@ export function matchesFilters(result: SmeSearchResult, filters: SearchFilters) 
   if (filters.hasWebsite === true && !result.websiteUrl) return false;
   if (filters.hasWebsite === false && result.websiteUrl) return false;
   if (filters.businessStatus && result.businessStatus !== filters.businessStatus) return false;
+  if (filters.classification && result.classification.effectiveClass !== filters.classification) return false;
+  const franchiseExcluded = ["FRANCHISE_EXCLUDED", "LARGE_CHAIN", "MANUAL_EXCLUDE"].includes(result.classification.effectiveClass);
+  if (filters.franchiseStatus === "INCLUDED" && franchiseExcluded) return false;
+  if (filters.franchiseStatus === "EXCLUDED" && !franchiseExcluded) return false;
+  if (filters.leadStatus === "CAPTURED" && result.savedLeadId !== null) return false;
+  if (filters.leadStatus === "SAVED" && result.savedLeadId === null) return false;
+  if (filters.leadStatus === "CONTACTED" && !result.alreadyContacted) return false;
+  if (filters.leadStatus === "DO_NOT_CONTACT" && !result.doNotContact) return false;
   if (filters.excludeDoNotContact && result.doNotContact) return false;
   if (filters.excludePreviouslyContacted && result.alreadyContacted) return false;
   return true;

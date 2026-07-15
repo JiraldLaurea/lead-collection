@@ -122,6 +122,12 @@ export function SmeDetailDrawer({ result, onClose, onOverridden }: SmeDetailDraw
                 <strong>{result.phoneNumber ?? "Not published"}</strong>
               </div>
               <div className="detail-row">
+                <span>Email</span>
+                <strong>
+                  {result.email ? <a href={`mailto:${result.email}`}>{result.email}</a> : "Not found yet"}
+                </strong>
+              </div>
+              <div className="detail-row">
                 <span>Website</span>
                 <strong>
                   {result.websiteUrl ? (
@@ -156,9 +162,9 @@ export function SmeDetailDrawer({ result, onClose, onOverridden }: SmeDetailDraw
                       {factor.label}: {Math.round(factor.points)} / {factor.max}
                       {factor.unknown ? " · partly unknown" : ""}
                     </code>
-                    {factor.evidence.map((line) => (
-                      <p key={line}>{line}</p>
-                    ))}
+                    {Array.isArray(factor.evidence)
+                      ? factor.evidence.map((line) => <p key={line}>{line}</p>)
+                      : null}
                   </li>
                 ))}
               </ul>

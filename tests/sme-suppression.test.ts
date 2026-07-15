@@ -65,6 +65,24 @@ describe("SMS recipient screening", () => {
     expect(result.excluded[0]).toMatchObject({ reason: "PREVIOUSLY_FAILED" });
   });
 
+  it("blocks an SME that is still awaiting classification review", async () => {
+    const result = await screenSmsRecipients([
+      { ...lead(1, "Review Cafe", "09171568299"), classification: "MANUAL_REVIEW" }
+    ]);
+
+    expect(result.sendable).toHaveLength(0);
+    expect(result.excluded[0]).toMatchObject({ reason: "CLASSIFICATION_NOT_APPROVED" });
+    expect(result.summary.requiresReview).toBe(1);
+  });
+
+  it("allows an explicitly approved SME classification", async () => {
+    const result = await screenSmsRecipients([
+      { ...lead(1, "Independent Cafe", "09171568299"), classification: "INDEPENDENT_SME" }
+    ]);
+
+    expect(result.sendable).toHaveLength(1);
+  });
+
   it("collapses the same number appearing twice in one batch", async () => {
     const result = await screenSmsRecipients([
       lead(1, "Cafe One", "0917 156 8299"),

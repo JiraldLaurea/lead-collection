@@ -1,11 +1,14 @@
 import { normalizePhilippineMobileNumber } from "@/lib/export";
 import { prisma } from "@/lib/prisma";
+import { isContactableClass } from "@/lib/sme/classify";
 import type { ExcludedRecipient, ExclusionReason, ScreeningSummary } from "@/lib/sme/suppression-labels";
 
 export type SmsRecipientInput = {
   id: number;
   businessName: string;
   phoneNumber: string | null;
+  /** Present for SME profiles; unreviewed and excluded classes must never bulk-send. */
+  classification?: string | null;
 };
 
 export type SmsRecipient = SmsRecipientInput & { phone: string };
@@ -76,6 +79,11 @@ export async function screenSmsRecipients(recipients: SmsRecipientInput[]): Prom
   for (const recipient of normalized) {
     const base = { id: recipient.id, businessName: recipient.businessName, phoneNumber: recipient.phoneNumber };
 
+    if (recipient.classification && !isContactableClass(recipient.classification)) {
+      excluded.push({ ...base, reason: "CLASSIFICATION_NOT_APPROVED" });
+      continue;
+    }
+
     if (!recipient.phoneNumber?.trim()) {
       excluded.push({ ...base, reason: "MISSING_PHONE" });
       continue;
@@ -111,6 +119,7 @@ export async function screenSmsRecipients(recipients: SmsRecipientInput[]): Prom
       sendable: sendable.length,
       missingPhone: count("MISSING_PHONE"),
       invalidNumber: count("INVALID_NUMBER"),
+      requiresReview: count("CLASSIFICATION_NOT_APPROVED"),
       duplicate: count("DUPLICATE_IN_BATCH"),
       doNotContact: count("DO_NOT_CONTACT"),
       previouslyFailed: count("PREVIOUSLY_FAILED")

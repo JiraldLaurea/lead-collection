@@ -11,12 +11,14 @@ function normalizeWebsiteUrl(value: string) {
 function candidateUrls(websiteUrl: string) {
   try {
     const base = new URL(normalizeWebsiteUrl(websiteUrl));
+    const profileBase = new URL(base);
+    if (!profileBase.pathname.endsWith("/")) profileBase.pathname = `${profileBase.pathname}/`;
     return [
       base.toString(),
-      new URL("/contact", base).toString(),
-      new URL("/contact-us", base).toString(),
-      new URL("/about", base).toString(),
-      new URL("/about-us", base).toString()
+      new URL("contact", profileBase).toString(),
+      new URL("contact-us", profileBase).toString(),
+      new URL("about", profileBase).toString(),
+      new URL("about-us", profileBase).toString()
     ];
   } catch {
     return [];
@@ -102,5 +104,22 @@ export async function discoverLeadEmail(leadId: number) {
     where: { id: leadId },
     data: { email: null, emailSource: null, emailStatus: "NOT_FOUND", emailCheckedAt: new Date() }
   });
+  return { status: "NOT_FOUND", email: null, source: null };
+}
+
+/** Discovers and persists an email on a captured SME profile without creating a Lead. */
+export async function discoverSmeProfileEmail(providerPlaceId: string) {
+  const profile = await prisma.smeBusinessProfile.findUnique({ where: { providerPlaceId } });
+  if (!profile) return { status: "NOT_FOUND", email: null, source: null };
+  if (profile.email) return { status: "FOUND", email: profile.email, source: profile.websiteUrl };
+  if (!profile.websiteUrl) return { status: "NO_WEBSITE", email: null, source: null };
+
+  for (const url of candidateUrls(profile.websiteUrl)) {
+    const [email] = extractEmails(await fetchPage(url));
+    if (!email) continue;
+    await prisma.smeBusinessProfile.update({ where: { id: profile.id }, data: { email } });
+    return { status: "FOUND", email, source: url };
+  }
+
   return { status: "NOT_FOUND", email: null, source: null };
 }

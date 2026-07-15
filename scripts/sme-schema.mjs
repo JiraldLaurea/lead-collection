@@ -82,6 +82,7 @@ export const smeDdl = [
     latitude REAL,
     longitude REAL,
     phone_number TEXT,
+    email TEXT,
     website_url TEXT,
     website_host TEXT,
     rating REAL,
@@ -222,6 +223,6 @@ export const smeDdl = [
  * no-op once the table exists, so a new column needs an explicit additive ALTER.
  */
 export const smeColumnUpgrades = [
-  { table: "sme_business_profiles", column: "lead_status", definition: "lead_status TEXT NOT NULL DEFAULT 'NEW'" }
+  { table: "sme_business_profiles", column: "lead_status", definition: "lead_status TEXT NOT NULL DEFAULT 'NEW'" },
+  { table: "sme_business_profiles", column: "email", definition: "email TEXT" }
 ];
-

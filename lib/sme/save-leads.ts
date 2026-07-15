@@ -9,6 +9,7 @@ export type SaveLeadsResult = {
   linked: number;
   skipped: { displayName: string; reason: string }[];
   leadIds: number[];
+  saved: { providerPlaceId: string; leadId: number }[];
 };
 
 /**
@@ -29,6 +30,7 @@ export async function saveSmeLeads(
   const created: number[] = [];
   const linked: number[] = [];
   const skipped: { displayName: string; reason: string }[] = [];
+  const saved: { providerPlaceId: string; leadId: number }[] = [];
 
   for (const result of results) {
     // A franchise or an unreviewed chain must not silently enter the lead list.
@@ -78,6 +80,7 @@ export async function saveSmeLeads(
 
     if (existingLead) linked.push(lead.id);
     else created.push(lead.id);
+    saved.push({ providerPlaceId: result.providerPlaceId, leadId: lead.id });
 
     const { normalizedName, brandCandidateName, branchLabel } = splitBusinessName(result.displayName);
 
@@ -171,5 +174,5 @@ export async function saveSmeLeads(
     });
   }
 
-  return { created: created.length, linked: linked.length, skipped, leadIds: [...created, ...linked] };
+  return { created: created.length, linked: linked.length, skipped, leadIds: [...created, ...linked], saved };
 }

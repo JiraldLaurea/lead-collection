@@ -24,8 +24,8 @@ export default async function EmailLogPage({ searchParams }: { searchParams: Pro
   return (
     <section className="stack">
       <div className="page-title">
-        <h1>Email Log</h1>
-        <p>Sent outreach emails with recipient details and message content.</p>
+        <h1>Email</h1>
+        <p>Review sent outreach emails, recipient details, and message content.</p>
       </div>
       <EmailLogTable
         filters={filters}

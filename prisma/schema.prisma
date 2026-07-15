@@ -211,6 +211,7 @@ model SmeBusinessProfile {
   latitude           Float?
   longitude          Float?
   phoneNumber        String?   @map("phone_number")
+  email              String?
   websiteUrl         String?   @map("website_url")
   websiteHost        String?   @map("website_host")
   rating             Float?

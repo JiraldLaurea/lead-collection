@@ -26,8 +26,8 @@ export default async function SmsLogPage({ searchParams }: { searchParams: Promi
   return (
     <section className="stack">
       <div className="page-title">
-        <h1>SMS Log</h1>
-        <p>Sent SMS attempts with recipient details, provider results, and message content.</p>
+        <h1>SMS</h1>
+        <p>Review sent SMS attempts, provider results, and message content.</p>
       </div>
       <SmsLogTable
         filters={filters}

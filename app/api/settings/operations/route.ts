@@ -1,4 +1,4 @@
-import { disableAutomationStatus, ensureAutomationRunning } from "@/lib/auto-email";
+import { disableAutomationStatus, ensureAutomationRunning, usesHostedAutomation } from "@/lib/auto-email";
 import { fail, ok } from "@/lib/http";
 import { normalizeDailyLimit, normalizeTimeValue, saveOperationsSettings } from "@/lib/operations-settings";
 import { requireApiAdmin } from "@/lib/require-auth";
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     autoEmailDailyLimit: normalizeDailyLimit(String(body.autoEmailDailyLimit ?? ""))
   });
 
-  if (settings.autoEmailEnabled) {
+  if (settings.autoEmailEnabled && !usesHostedAutomation()) {
     await ensureAutomationRunning("settings save");
   } else {
     await disableAutomationStatus();

@@ -48,19 +48,19 @@ export function DebugSettingsPanel({ settings }: { settings: DebugSettings }) {
 
     if (response.ok) {
       setNoticeType("success");
-      setNotice(`Sample lead ready: ${payload.data.businessName} (${payload.data.phoneNumber}, ${payload.data.email}).`);
+      setNotice(`SME sample ready: ${payload.data.businessName} (${payload.data.phoneNumber}, ${payload.data.email}).`);
       return;
     }
 
     setNoticeType("error");
-    setNotice(payload.error?.message || "Unable to create sample lead.");
+    setNotice(payload.error?.message || "Unable to create the SME sample.");
   }
 
   return (
     <form className="panel settings-panel" onSubmit={saveSettings}>
       {showLoadingModal ? <LoadingModal label="Debug loading modal" onCancel={() => setShowLoadingModal(false)} /> : null}
       {saving ? <LoadingModal label="Saving debug settings" /> : null}
-      {creatingSampleLead ? <LoadingModal label="Creating sample lead" /> : null}
+      {creatingSampleLead ? <LoadingModal label="Creating SME sample" /> : null}
       {notice ? <Snackbar message={notice} type={noticeType} onDismiss={() => setNotice("")} /> : null}
       <div className="settings-panel-body">
         <SettingPanelHeader title="Debug" subtitle="Preview internal UI states and test automation without real outbound email or SMS." />
@@ -116,7 +116,7 @@ export function DebugSettingsPanel({ settings }: { settings: DebugSettings }) {
             <path d="M19 8v6" />
             <path d="M22 11h-6" />
           </svg>
-          Create sample lead
+          Create SME sample
         </button>
         <button type="submit" disabled={saving}>
           <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">

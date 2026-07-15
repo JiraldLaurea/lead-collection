@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Checkbox from "@mui/material/Checkbox";
 import { EmailLogFiltersModal, type EmailLogFilters } from "@/components/EmailLogFiltersModal";
 import { LoadingModal } from "@/components/LoadingModal";
@@ -78,7 +79,12 @@ export function EmailLogTable({ logs, filters }: { logs: EmailLogRow[]; filters:
       {deleting ? <LoadingModal label="Deleting email logs" /> : null}
       {notice ? <Snackbar message={notice} type={noticeType} onDismiss={() => setNotice("")} /> : null}
       <div className="bulk-actions">
-        <div className="bulk-actions-left" />
+        <div className="bulk-actions-left">
+          <Link href="/compose-email" className="button">
+            <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4Z" /><path d="m4 7 8 6 8-6" /><path d="M17 3v6M14 6h6" /></svg>
+            Compose Email
+          </Link>
+        </div>
         <div className="bulk-actions-right">
           <EmailLogFiltersModal filters={filters} />
           <button

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { AutomationStatusBar } from "@/components/AutomationStatusBar";
 import { Sidebar } from "@/components/Sidebar";
+import { SmeScheduledSearchLocalTick } from "@/components/SmeScheduledSearchLocalTick";
 import { isAdminAuthenticated } from "@/lib/auth";
 import { getAutomationStatus } from "@/lib/auto-email";
 import { isSmeSearchEnabled } from "@/lib/feature-flags";
@@ -37,6 +38,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           {isAuthenticated ? <Sidebar smeSearchEnabled={smeSearchEnabled} /> : null}
           <main>
             {isAuthenticated ? <AutomationStatusBar initialStatus={automationStatus} /> : null}
+            {isAuthenticated && smeSearchEnabled ? <SmeScheduledSearchLocalTick /> : null}
             {children}
           </main>
         </div>

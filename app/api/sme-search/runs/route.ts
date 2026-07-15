@@ -28,6 +28,17 @@ const schema = z.object({
       hasPhone: z.boolean().optional(),
       hasWebsite: z.boolean().optional(),
       businessStatus: z.enum(["OPERATIONAL", "CLOSED_TEMPORARILY", "CLOSED_PERMANENTLY"]).optional(),
+      classification: z.enum([
+        "INDEPENDENT_SME",
+        "LOCAL_SME_CHAIN",
+        "MANUAL_REVIEW",
+        "LARGE_CHAIN",
+        "FRANCHISE_EXCLUDED",
+        "MANUAL_INCLUDE",
+        "MANUAL_EXCLUDE"
+      ]).optional(),
+      franchiseStatus: z.enum(["INCLUDED", "EXCLUDED"]).optional(),
+      leadStatus: z.enum(["CAPTURED", "SAVED", "CONTACTED", "DO_NOT_CONTACT"]).optional(),
       excludeDoNotContact: z.boolean().optional(),
       excludePreviouslyContacted: z.boolean().optional()
     })

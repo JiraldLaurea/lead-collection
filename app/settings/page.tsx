@@ -1,5 +1,6 @@
 import { DeleteLeadsButton } from "@/components/DeleteLeadsButton";
 import { DebugSettingsPanel } from "@/components/DebugSettingsPanel";
+import { DoNotContactSettingsPanel } from "@/components/DoNotContactSettingsPanel";
 import { EmailTemplateSettingsForm } from "@/components/EmailTemplateSettingsForm";
 import { OperationsSettingsForm } from "@/components/OperationsSettingsForm";
 import { SettingPanelHeader } from "@/components/SettingPanelHeader";
@@ -29,9 +30,15 @@ export default async function SettingsPage() {
   const debugSettings = await getDebugSettings();
   const smeSettings = await getSmeSettings();
   const smeEnabled = await isSmeSearchEnabled();
-  const [zoneCount, brandCount] = await Promise.all([
-    prisma.smeSearchZone.count(),
-    prisma.franchiseBrand.count()
+  const [zoneCount, brandCount, doNotContactEntries] = await Promise.all([
+    prisma.smeSearchZone.count({ where: { enabled: true } }),
+    prisma.franchiseBrand.count(),
+    prisma.doNotContact.findMany({
+      where: { channel: { in: ["sms", "email"] }, active: true },
+      select: { id: true, normalizedContact: true, channel: true, reason: true, source: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 100
+    })
   ]);
   return (
     <section className="stack">
@@ -42,6 +49,13 @@ export default async function SettingsPage() {
       <OperationsSettingsForm settings={operationsSettings} />
       <EmailTemplateSettingsForm initialBody={emailBodyTemplate} initialAttachment={emailTemplateAttachment} />
       <SmsTemplateSettingsForm initialBody={smsBodyTemplate} />
+      <DoNotContactSettingsPanel
+        initialEntries={doNotContactEntries.map((entry) => ({
+          ...entry,
+          channel: entry.channel === "email" ? "email" : "sms",
+          createdAt: entry.createdAt.toISOString()
+        }))}
+      />
       <SmeSettingsForm
         enabled={smeEnabled}
         weights={smeSettings.weights}

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { LoadingModal } from "@/components/LoadingModal";
 import { Snackbar } from "@/components/Snackbar";
+import { importCsvRecipientColumn } from "@/lib/csv-recipient-import";
 
 type Props = { defaultBody: string };
 type ProgressEvent = {
@@ -17,6 +18,7 @@ type ProgressEvent = {
 type ManualSmsRecipient = { name?: string; phone: string };
 
 export function ManualSmsForm({ defaultBody }: Props) {
+  const csvInputId = useId();
   const [recipientsText, setRecipientsText] = useState("");
   const [body, setBody] = useState(defaultBody);
   const [sending, setSending] = useState(false);
@@ -24,6 +26,19 @@ export function ManualSmsForm({ defaultBody }: Props) {
   const [notice, setNotice] = useState("");
   const [noticeType, setNoticeType] = useState<"success" | "error">("success");
   const parsedRecipients = parseRecipients(recipientsText);
+
+  async function importRecipients(file: File | null) {
+    if (!file) return;
+    const { values, error } = importCsvRecipientColumn(await file.text(), ["phone", "phone_number", "phonenumber", "mobile", "mobile_number"]);
+    if (error) {
+      setNoticeType("error");
+      setNotice(error);
+      return;
+    }
+    setRecipientsText((current) => Array.from(new Set([...current.split(/\r?\n/).filter(Boolean), ...values])).join("\n"));
+    setNoticeType("success");
+    setNotice(`Imported ${values.length} phone number${values.length === 1 ? "" : "s"}.`);
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -97,16 +112,16 @@ export function ManualSmsForm({ defaultBody }: Props) {
   }
 
   return (
-    <form className="panel manual-email-card" onSubmit={submit}>
+    <form className="panel manual-email-card manual-compose-card" onSubmit={submit}>
       {sending ? <LoadingModal label="Sending SMS" message={`${progress.sent}/${progress.total} SMS sent${progress.failed ? ` · ${progress.completed}/${progress.total} processed` : ""}`} /> : null}
       {notice ? <Snackbar message={notice} type={noticeType} onDismiss={() => setNotice("")} /> : null}
-      <div className="manual-email-body">
+      <div className="manual-email-body manual-compose-body">
         <label>
           Recipients
           <textarea
             value={recipientsText}
             onChange={(event) => setRecipientsText(event.target.value)}
-            rows={7}
+            rows={5}
             placeholder={"09614073159\nJirald Sample Cafe, 09614073159"}
             disabled={sending}
           />
@@ -114,15 +129,19 @@ export function ManualSmsForm({ defaultBody }: Props) {
             One recipient per line. Use either <code>phone</code> or <code>name, phone</code>. {parsedRecipients.valid.length} valid recipient{parsedRecipients.valid.length === 1 ? "" : "s"}.
           </span>
         </label>
+        <div className="manual-csv-import">
+          <input id={csvInputId} className="file-upload-input" type="file" accept=".csv,text/csv" onChange={(event) => { void importRecipients(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }} disabled={sending} />
+          <label className="button secondary compact-button" htmlFor={csvInputId}>Import CSV</label>
+          <span className="field-note">Imports values from the <code>phone</code> column in an SME Search CSV export.</span>
+        </div>
         <label>
           Message
-          <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={10} maxLength={1000} disabled={sending} />
+          <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={7} maxLength={1000} disabled={sending} />
           <span className="field-note">Use <code>[business_name]</code> to personalize each message. {body.length}/1000 characters.</span>
         </label>
       </div>
       <div className="manual-email-footer">
         <button type="button" className="secondary" onClick={() => setBody(defaultBody)} disabled={sending}>Reset message</button>
-        <a className="button secondary" href="/sms-log">SMS Log</a>
         <button type="submit" disabled={sending || !recipientsText.trim() || !body.trim()}>Send SMS</button>
       </div>
     </form>

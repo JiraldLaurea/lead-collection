@@ -5,6 +5,7 @@ import { getEmailTemplateDefaultAttachment } from "@/lib/email-template";
 import { buildLeadEmailContent, sendLeadEmail } from "@/lib/mailer";
 import { prisma } from "@/lib/prisma";
 import { requireApiAdmin } from "@/lib/require-auth";
+import { screenEmailRecipients } from "@/lib/email-suppression";
 
 const requestSchema = z.object({
   leadIds: z.array(z.number().int().positive()).min(1).max(50),
@@ -82,12 +83,17 @@ export async function POST(request: Request) {
     }
   });
 
-  if (leads.length === 0) return fail("E-EMAIL-02", "No selected leads have an email address", 400);
+  const screening = await screenEmailRecipients(leads);
+  if (screening.sendable.length === 0) {
+    return fail("E-EMAIL-02", "No selected leads have a contactable email address", 400, {
+      screening: screening.summary,
+      excluded: screening.excluded
+    });
+  }
 
   const debugSettings = await getDebugSettings();
   const results = [];
-  for (const lead of leads) {
-    if (!lead.email) continue;
+  for (const lead of screening.sendable) {
     try {
       const sentEmail = debugSettings.emailDryRunEnabled
         ? buildLeadEmailContent({
@@ -140,5 +146,5 @@ export async function POST(request: Request) {
   const failed = results.length - sent;
   if (sent === 0) return fail("E-EMAIL-03", "Email sending failed", 500, results);
 
-  return ok({ sent, failed, results });
+  return ok({ sent, failed, results, screening: screening.summary, excluded: screening.excluded });
 }

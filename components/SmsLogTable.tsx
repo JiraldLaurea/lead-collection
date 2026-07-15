@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Checkbox from "@mui/material/Checkbox";
 import { LoadingModal } from "@/components/LoadingModal";
 import { ModalHeaderText } from "@/components/ModalHeaderText";
@@ -121,7 +122,12 @@ export function SmsLogTable({ logs, filters }: { logs: SmsLogRow[]; filters: Sms
       {refreshing ? <LoadingModal label="Checking delivery status" /> : null}
       {notice ? <Snackbar message={notice} type={noticeType} onDismiss={() => setNotice("")} /> : null}
       <div className="bulk-actions">
-        <div className="bulk-actions-left" />
+        <div className="bulk-actions-left">
+          <Link href="/send-sms" className="button">
+            <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H7l-3 3Z" /><path d="m13 9 4 3-4 3" /><path d="M7 12h9" /></svg>
+            Send SMS
+          </Link>
+        </div>
         <div className="bulk-actions-right">
           <button type="button" className="secondary" disabled={refreshing} onClick={refreshDelivery}>
             <svg className="button-icon" viewBox="0 0 24 24" aria-hidden="true">

@@ -161,8 +161,8 @@ attach to.)*
 
 **This is the one that must not fail.**
 
-1. Add an opt-out. There is no UI for this yet, so insert it directly — use a number from one
-   of your saved leads, normalized to `639XXXXXXXXX`.
+1. In **Settings → Do Not Contact**, choose **SMS** and add a number from one of your saved
+   leads, normalized to `639XXXXXXXXX`.
 2. In SME Search, select that lead plus 2 others → **Save & open SMS composer**.
 
 **Expect, before anything is sent:**
@@ -248,5 +248,5 @@ classification and score.
 | --- | --- |
 | Carrier blocks the promotional SMS copy | **Not a code bug.** 7/7 marketing messages rejected; the plain wording is accepted. Register `QROAD` as a sender ID and pre-approve the template with the carriers. |
 | Delivery receipts stay "pending" → "no receipt" | The provider's dashboard shows `submitted`, never `delivered`, DLR 0%. Messages **do** reach the handset. Ask Bliply to re-enable DLRs. The app now holds a persistent SMPP bind, so it will capture them when they resume. |
-| No Do Not Contact management UI | Opt-outs must be inserted into the database directly. |
+| Do Not Contact management | **Settings → Do Not Contact** manages SMS and email opt-outs; all send APIs enforce them server-side. |
 | Branch counts are a floor, not a truth | We can only count branches a search actually returned. |

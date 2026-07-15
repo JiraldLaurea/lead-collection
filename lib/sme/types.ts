@@ -25,6 +25,9 @@ export type SearchFilters = {
   hasPhone?: boolean;
   hasWebsite?: boolean;
   businessStatus?: BusinessStatus;
+  classification?: string;
+  franchiseStatus?: "INCLUDED" | "EXCLUDED";
+  leadStatus?: "CAPTURED" | "SAVED" | "CONTACTED" | "DO_NOT_CONTACT";
   excludeDoNotContact?: boolean;
   excludePreviouslyContacted?: boolean;
 };

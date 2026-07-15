@@ -7,6 +7,7 @@ import { fail } from "@/lib/http";
 import { sendManualEmail } from "@/lib/mailer";
 import { prisma } from "@/lib/prisma";
 import { requireApiAdmin } from "@/lib/require-auth";
+import { screenEmailRecipients } from "@/lib/email-suppression";
 
 const requestSchema = z.object({
   recipients: z.array(z.string().trim().email()).min(1).max(500),
@@ -34,7 +35,16 @@ export async function POST(request: Request) {
     }));
     const defaultAttachment = await getEmailTemplateDefaultAttachment();
     const attachments = defaultAttachment ? [defaultAttachment, ...uploadedAttachments] : uploadedAttachments;
-    const uniqueRecipients = Array.from(new Set(parsed.data.recipients.map((email) => email.toLowerCase())));
+    const screening = await screenEmailRecipients(
+      parsed.data.recipients.map((email, index) => ({ id: index + 1, businessName: "Manual email", email }))
+    );
+    const uniqueRecipients = screening.sendable.map((recipient) => recipient.email);
+    if (uniqueRecipients.length === 0) {
+      return fail("E-MANUAL-EMAIL-04", "Every recipient is excluded by the Do Not Contact list.", 400, {
+        screening: screening.summary,
+        excluded: screening.excluded
+      });
+    }
     const debugSettings = await getDebugSettings();
     const encoder = new TextEncoder();
     const stream = new ReadableStream({

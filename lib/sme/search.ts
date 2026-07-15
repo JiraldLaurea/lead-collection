@@ -1,10 +1,11 @@
-import { findSmeCategory } from "@/lib/sme/categories";
+import { findSmeCategory, smeCategories } from "@/lib/sme/categories";
 import { MAX_PAGE_SIZE, PlacesError, searchNearby, searchText } from "@/lib/sme/google-places";
 import type { BusinessCandidate, SearchRequest } from "@/lib/sme/types";
 
 const DEFAULT_MAX_RESULTS = 60;
 const HARD_MAX_RESULTS = 200;
 const DEFAULT_RADIUS_M = 500;
+const broadSmePlaceTypes = Array.from(new Set(smeCategories.flatMap((item) => item.googleTypes)));
 
 export type DiscoveryOptions = {
   signal?: AbortSignal;
@@ -56,23 +57,29 @@ export async function runDiscovery(
     request.mode === "MAP_RADIUS" ||
     (request.mode === "COMMERCIAL_ROAD" && typeof request.latitude === "number");
 
-  if (wantsNearby && category && category.googleTypes.length > 0) {
+  const nearbyTypes = category ? category.googleTypes : broadSmePlaceTypes;
+
+  // A radius-only search has no sensible default category. Validate before building
+  // the Nearby request so an invalid form never spends a Google Places call.
+  if (request.mode === "MAP_RADIUS" && !category) {
+    throw new PlacesError("E-PLACES-05", "Map radius search requires a business category");
+  }
+
+  if (wantsNearby && nearbyTypes.length > 0) {
     const { latitude, longitude } = requireCoordinates(request);
     const page = await searchNearby(
       {
         latitude,
         longitude,
         radiusMeters,
-        includedTypes: category.googleTypes,
+        // "Any" uses all supported SME types, rather than a vague text query such as
+        // "business in <street>" that can return only the street/place record.
+        includedTypes: nearbyTypes,
         maxResultCount: Math.min(maxResults, MAX_PAGE_SIZE)
       },
       options
     );
     return dedupeByPlaceId(page.candidates).slice(0, maxResults);
-  }
-
-  if (request.mode === "MAP_RADIUS" && !category) {
-    throw new PlacesError("E-PLACES-05", "Map radius search requires a business category");
   }
 
   const textQuery = buildTextQuery(request);

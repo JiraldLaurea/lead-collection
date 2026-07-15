@@ -6,9 +6,12 @@ import { getSmsBodyTemplate } from "@/lib/sms-template";
 import { prisma } from "@/lib/prisma";
 import { buildLeadWhere, parseLeadFilters } from "@/lib/leads";
 import { requirePageAdmin } from "@/lib/require-auth";
+import { isSmeSearchEnabled } from "@/lib/feature-flags";
+import { redirect } from "next/navigation";
 
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   await requirePageAdmin();
+  if (await isSmeSearchEnabled()) redirect("/sme-search");
   const params = await searchParams;
   const urlParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {

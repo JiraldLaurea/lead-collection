@@ -8,6 +8,7 @@
 export type ExclusionReason =
   | "MISSING_PHONE"
   | "INVALID_NUMBER"
+  | "CLASSIFICATION_NOT_APPROVED"
   | "DUPLICATE_IN_BATCH"
   | "DO_NOT_CONTACT"
   | "PREVIOUSLY_FAILED";
@@ -24,6 +25,7 @@ export type ScreeningSummary = {
   sendable: number;
   missingPhone: number;
   invalidNumber: number;
+  requiresReview: number;
   duplicate: number;
   doNotContact: number;
   previouslyFailed: number;
@@ -32,6 +34,7 @@ export type ScreeningSummary = {
 export const exclusionLabels: Record<ExclusionReason, string> = {
   MISSING_PHONE: "No phone number",
   INVALID_NUMBER: "Not a valid PH mobile number",
+  CLASSIFICATION_NOT_APPROVED: "SME classification requires review",
   DUPLICATE_IN_BATCH: "Duplicate number in this batch",
   DO_NOT_CONTACT: "On the Do Not Contact list",
   PREVIOUSLY_FAILED: "Previously failed delivery (undeliverable)"
