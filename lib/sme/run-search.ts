@@ -7,11 +7,15 @@ import { dedupeCandidates, type ReviewMatch } from "@/lib/sme/dedupe";
 import { placeDetails } from "@/lib/sme/google-places";
 import { toLeadPlaceId } from "@/lib/sme/lead-link";
 import { normalizeWebsiteHost } from "@/lib/sme/normalize-name";
+import { getRemainingPlacesDetailsBudget, recordPlacesDetailsCalls } from "@/lib/sme/places-budget";
 import { scoreLead, type LeadScore } from "@/lib/sme/score";
 import { runDiscovery } from "@/lib/sme/search";
 import { getSmeSettings } from "@/lib/sme/settings";
 import { persistSmeSearchResults } from "@/lib/sme/persist-results";
-import type { BusinessCandidate, SearchFilters, SearchRequest, SearchRunSummary, SmeLeadStatus } from "@/lib/sme/types";
+import type { BusinessCandidate, BusinessStatus, SearchFilters, SearchRequest, SearchRunSummary, SmeLeadStatus } from "@/lib/sme/types";
+
+/** How long a stored Place Details record is reused before we pay Google to refresh it. */
+const DETAILS_CACHE_TTL_DAYS = 30;
 
 export type SmeSearchResult = {
   providerPlaceId: string;
@@ -73,8 +77,64 @@ export async function runSmeSearch(
     );
 
     // Contact stage: only for businesses that survived screening.
+    //
+    // Place Details (Enterprise) is the expensive SKU, so we do two things before spending on it:
+    //  1) Reuse recently-fetched details already stored on the SmeBusinessProfile (a business's
+    //     phone/website almost never changes), instead of re-paying Google on every search.
+    //  2) Enforce a hard daily budget on real calls, so a runaway sweep cannot rack up cost.
+    const detailsCacheCutoff = new Date(Date.now() - DETAILS_CACHE_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const cachedProfiles = survivors.length
+      ? await prisma.smeBusinessProfile.findMany({
+          where: {
+            providerPlaceId: { in: survivors.map((candidate) => candidate.providerPlaceId) },
+            detailsFetched: true,
+            lastFetchedAt: { gte: detailsCacheCutoff }
+          },
+          select: {
+            providerPlaceId: true, phoneNumber: true, websiteUrl: true, rating: true, reviewCount: true,
+            businessStatus: true, primaryType: true, formattedAddress: true, latitude: true, longitude: true,
+            googleMapsUrl: true, lastFetchedAt: true
+          }
+        })
+      : [];
+    // A record with no contact data at all was never really detail-fetched (e.g. a screened-out
+    // discovery record), so don't treat it as a cache hit — fetch it for real.
+    const cacheByPlaceId = new Map(
+      cachedProfiles
+        .filter((profile) => profile.phoneNumber !== null || profile.websiteUrl !== null || profile.rating !== null)
+        .map((profile) => [profile.providerPlaceId, profile])
+    );
+
+    const remainingBudget = await getRemainingPlacesDetailsBudget();
+    let realDetailCalls = 0;
     const detailed: BusinessCandidate[] = [];
     for (const candidate of survivors) {
+      const cached = cacheByPlaceId.get(candidate.providerPlaceId);
+      if (cached) {
+        detailed.push({
+          ...candidate,
+          formattedAddress: candidate.formattedAddress ?? cached.formattedAddress,
+          latitude: candidate.latitude ?? cached.latitude,
+          longitude: candidate.longitude ?? cached.longitude,
+          primaryType: candidate.primaryType ?? cached.primaryType,
+          businessStatus: candidate.businessStatus ?? (cached.businessStatus as BusinessStatus | null),
+          googleMapsUri: candidate.googleMapsUri ?? cached.googleMapsUrl,
+          phoneNumber: cached.phoneNumber,
+          websiteUrl: cached.websiteUrl,
+          rating: cached.rating,
+          userRatingCount: cached.reviewCount,
+          detailsFetched: true,
+          fetchedAt: cached.lastFetchedAt ?? candidate.fetchedAt
+        });
+        continue;
+      }
+      if (realDetailCalls >= remainingBudget) {
+        // Daily Place Details budget exhausted — keep the discovery record without paying for
+        // contact data. It stays detailsFetched:false, so a later run retries it once budget frees up.
+        detailed.push(candidate);
+        continue;
+      }
+      realDetailCalls += 1;
       try {
         detailed.push(await placeDetails(candidate.providerPlaceId, options));
       } catch {
@@ -82,6 +142,7 @@ export async function runSmeSearch(
         detailed.push(candidate);
       }
     }
+    if (realDetailCalls > 0) await recordPlacesDetailsCalls(realDetailCalls);
 
     // Re-classify with the fuller picture: website domains and prior branch counts are only
     // available now, and both can change a verdict.

@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { baseColumnUpgrades, baseDdl } from "./base-schema.mjs";
+import { baseColumnUpgrades, baseDdl, basePostUpgradeDdl } from "./base-schema.mjs";
 import { smeColumnUpgrades, smeDdl } from "./sme-schema.mjs";
 
 const ddl = [...baseDdl, ...smeDdl];
@@ -36,6 +36,8 @@ for (const upgrade of columnUpgrades) {
     db.exec(`ALTER TABLE ${upgrade.table} ADD COLUMN ${upgrade.definition}`);
   }
 }
+
+for (const statement of basePostUpgradeDdl) db.exec(statement);
 
 db.close();
 console.log(`Local SQLite database initialized at ${dbPath}`);
@@ -63,6 +65,8 @@ if (!url || !authToken || url.startsWith("libsql://replace_with")) {
         if (!/duplicate column/i.test(String(error?.message ?? error))) throw error;
       }
     }
+
+    for (const statement of basePostUpgradeDdl) await client.execute(statement);
 
     const tables = await client.execute(
       "SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"

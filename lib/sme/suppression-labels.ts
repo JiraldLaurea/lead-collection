@@ -10,8 +10,7 @@ export type ExclusionReason =
   | "INVALID_NUMBER"
   | "CLASSIFICATION_NOT_APPROVED"
   | "DUPLICATE_IN_BATCH"
-  | "DO_NOT_CONTACT"
-  | "PREVIOUSLY_FAILED";
+  | "DO_NOT_CONTACT";
 
 export type ExcludedRecipient = {
   id: number;
@@ -28,7 +27,6 @@ export type ScreeningSummary = {
   requiresReview: number;
   duplicate: number;
   doNotContact: number;
-  previouslyFailed: number;
 };
 
 export const exclusionLabels: Record<ExclusionReason, string> = {
@@ -36,6 +34,5 @@ export const exclusionLabels: Record<ExclusionReason, string> = {
   INVALID_NUMBER: "Not a valid PH mobile number",
   CLASSIFICATION_NOT_APPROVED: "SME classification requires review",
   DUPLICATE_IN_BATCH: "Duplicate number in this batch",
-  DO_NOT_CONTACT: "On the Do Not Contact list",
-  PREVIOUSLY_FAILED: "Previously failed delivery (undeliverable)"
+  DO_NOT_CONTACT: "On the Do Not Contact list"
 };

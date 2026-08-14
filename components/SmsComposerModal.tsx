@@ -172,11 +172,6 @@ export function SmsComposerModal({ providerPlaceIds, initialBody, onClose, onSen
                     <strong>{summary.doNotContact}</strong> do not contact
                   </span>
                 ) : null}
-                {summary.previouslyFailed > 0 ? (
-                  <span className="sme-summary-chip">
-                    <strong>{summary.previouslyFailed}</strong> previously failed
-                  </span>
-                ) : null}
               </div>
             ) : null}
 

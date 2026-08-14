@@ -17,10 +17,16 @@ export default async function SmsLogPage({ searchParams }: { searchParams: Promi
     deliveryStatus: typeof params.deliveryStatus === "string" ? params.deliveryStatus : ""
   };
   const where = buildSmsLogWhere(filters);
+  const pageSize = normalizePageSize(typeof params.pageSize === "string" ? params.pageSize : undefined);
+  const requestedPage = normalizePage(typeof params.page === "string" ? params.page : undefined);
+  const totalLogs = await prisma.smsLog.count({ where });
+  const totalPages = Math.max(1, Math.ceil(totalLogs / pageSize));
+  const currentPage = Math.min(requestedPage, totalPages);
   const logs = await prisma.smsLog.findMany({
     where,
     orderBy: { sentAt: "desc" },
-    take: 100
+    skip: (currentPage - 1) * pageSize,
+    take: pageSize
   });
 
   return (
@@ -31,6 +37,10 @@ export default async function SmsLogPage({ searchParams }: { searchParams: Promi
       </div>
       <SmsLogTable
         filters={filters}
+        totalCount={totalLogs}
+        currentPage={currentPage}
+        pageSize={pageSize}
+        totalPages={totalPages}
         logs={logs.map((log) => ({
           id: log.id,
           leadId: log.leadId,
@@ -50,6 +60,16 @@ export default async function SmsLogPage({ searchParams }: { searchParams: Promi
       />
     </section>
   );
+}
+
+function normalizePage(value: string | undefined) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : 1;
+}
+
+function normalizePageSize(value: string | undefined) {
+  const parsed = Number(value);
+  return [20, 50, 100, 200].includes(parsed) ? parsed : 20;
 }
 
 function buildSmsLogWhere(filters: SmsLogFilters): Prisma.SmsLogWhereInput {

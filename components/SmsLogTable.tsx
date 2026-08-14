@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Checkbox from "@mui/material/Checkbox";
 import { LoadingModal } from "@/components/LoadingModal";
@@ -27,8 +27,23 @@ export type SmsLogRow = {
   errorMessage: string | null;
 };
 
-export function SmsLogTable({ logs, filters }: { logs: SmsLogRow[]; filters: SmsLogFilters }) {
+export function SmsLogTable({
+  logs,
+  filters,
+  totalCount,
+  currentPage,
+  pageSize,
+  totalPages
+}: {
+  logs: SmsLogRow[];
+  filters: SmsLogFilters;
+  totalCount: number;
+  currentPage: number;
+  pageSize: number;
+  totalPages: number;
+}) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [selectedLog, setSelectedLog] = useState<SmsLogRow | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -39,6 +54,24 @@ export function SmsLogTable({ logs, filters }: { logs: SmsLogRow[]; filters: Sms
   const visibleLogIds = useMemo(() => logs.map((log) => log.id), [logs]);
   const allSelected = visibleLogIds.length > 0 && visibleLogIds.every((id) => selectedIds.includes(id));
   const someSelected = visibleLogIds.some((id) => selectedIds.includes(id)) && !allSelected;
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [currentPage, pageSize]);
+
+  function goToPage(page: number) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", String(Math.min(Math.max(page, 1), totalPages)));
+    params.set("pageSize", String(pageSize));
+    router.push(`/sms-log?${params.toString()}`);
+  }
+
+  function changePageSize(nextPageSize: number) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("page", "1");
+    params.set("pageSize", String(nextPageSize));
+    router.push(`/sms-log?${params.toString()}`);
+  }
 
   function toggleLog(id: number) {
     setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
@@ -155,7 +188,7 @@ export function SmsLogTable({ logs, filters }: { logs: SmsLogRow[]; filters: Sms
         </div>
       </div>
       <div className="table-frame">
-        <div className="table-scroll email-log-table-frame">
+        <div className="table-scroll email-log-table-frame sms-log-table-scroll">
           <table className="email-log-table sms-log-table">
             <thead>
               <tr>
@@ -195,7 +228,7 @@ export function SmsLogTable({ logs, filters }: { logs: SmsLogRow[]; filters: Sms
                 <th>Delivery</th>
                 <th>Status</th>
               </tr>
-              <TableStatusRow colSpan={7} itemCount={logs.length} selectedCount={selectedIds.length} itemLabel="SMS log" />
+              <TableStatusRow colSpan={7} itemCount={totalCount} selectedCount={selectedIds.length} itemLabel="SMS log" />
             </thead>
             <tbody>
               {logs.map((log) => (
@@ -247,6 +280,28 @@ export function SmsLogTable({ logs, filters }: { logs: SmsLogRow[]; filters: Sms
             </tbody>
           </table>
         </div>
+        {totalCount > 0 ? (
+          <div className="table-pagination sme-table-pagination sms-log-pagination">
+            <div className="table-pagination-summary" aria-live="polite">
+              <strong>Showing {Math.min((currentPage - 1) * pageSize + 1, totalCount)}–{Math.min(currentPage * pageSize, totalCount)}</strong>
+              <span className="muted">of {totalCount} SMS logs</span>
+            </div>
+            <div className="table-pagination-controls">
+              <label className="table-page-size">
+                <span>Rows per page</span>
+                <select value={pageSize} onChange={(event) => changePageSize(Number(event.target.value))}>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={200}>200</option>
+                </select>
+              </label>
+              <span className="table-page-position">Page {currentPage} of {totalPages}</span>
+              <button type="button" className="secondary table-page-button" disabled={currentPage <= 1} onClick={() => goToPage(currentPage - 1)}>Previous</button>
+              <button type="button" className="secondary table-page-button" disabled={currentPage >= totalPages} onClick={() => goToPage(currentPage + 1)}>Next</button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {showDeleteModal ? (

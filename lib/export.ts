@@ -1,4 +1,3 @@
-import ExcelJS from "exceljs";
 import { prisma } from "@/lib/prisma";
 import { buildLeadWhere, LeadFilters } from "@/lib/leads";
 
@@ -66,6 +65,11 @@ export function leadsToPhoneCsv(leads: ExportLead[], suppressedPhones: Set<strin
 }
 
 export async function leadsToXlsx(leads: ExportLead[]) {
+  // Lazily loaded so the whole exceljs graph (and its `tmp` dependency, which registers a
+  // process 'exit' handler on every module eval) is not pulled into the many modules that only
+  // import this file for helpers like `normalizePhilippineMobileNumber`. Static import made every
+  // Next.js dev recompile stack another exit listener → MaxListenersExceededWarning.
+  const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Leads");
   sheet.columns = columns.map((key) => ({ key, header: key, width: 24 }));

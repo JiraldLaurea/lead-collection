@@ -109,6 +109,7 @@ export const baseDdl = [
     status TEXT NOT NULL,
     provider TEXT,
     body TEXT,
+    batch_key TEXT,
     provider_message_id TEXT,
     delivery_status TEXT,
     delivery_error TEXT,
@@ -172,6 +173,11 @@ export const baseDdl = [
   `CREATE INDEX IF NOT EXISTS imported_csv_leads_business_name_idx ON imported_csv_leads(business_name)`
 ];
 
+// These indexes depend on columns that may need to be added to existing tables first.
+export const basePostUpgradeDdl = [
+  `CREATE INDEX IF NOT EXISTS sms_logs_batch_key_idx ON sms_logs(batch_key)`
+];
+
 /**
  * Columns added to base tables after they first shipped. `CREATE TABLE IF NOT EXISTS` is a
  * no-op on an existing table, so these need an explicit additive ALTER.
@@ -184,5 +190,6 @@ export const baseColumnUpgrades = [
   { table: "sms_logs", column: "delivery_status", definition: "delivery_status TEXT" },
   { table: "sms_logs", column: "delivery_error", definition: "delivery_error TEXT" },
   { table: "sms_logs", column: "delivery_receipt", definition: "delivery_receipt TEXT" },
-  { table: "sms_logs", column: "delivered_at", definition: "delivered_at DATETIME" }
+  { table: "sms_logs", column: "delivered_at", definition: "delivered_at DATETIME" },
+  { table: "sms_logs", column: "batch_key", definition: "batch_key TEXT" }
 ];

@@ -1,12 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const doNotContactFindMany = vi.fn();
-const smsLogFindMany = vi.fn();
-
 vi.mock("@/lib/prisma", () => ({
   prisma: {
-    doNotContact: { findMany: (...args: unknown[]) => doNotContactFindMany(...args) },
-    smsLog: { findMany: (...args: unknown[]) => smsLogFindMany(...args) }
+    doNotContact: { findMany: (...args: unknown[]) => doNotContactFindMany(...args) }
   }
 }));
 
@@ -19,7 +16,6 @@ function lead(id: number, businessName: string, phoneNumber: string | null) {
 describe("SMS recipient screening", () => {
   beforeEach(() => {
     doNotContactFindMany.mockReset().mockResolvedValue([]);
-    smsLogFindMany.mockReset().mockResolvedValue([]);
   });
 
   it("passes a valid recipient through", async () => {
@@ -53,16 +49,6 @@ describe("SMS recipient screening", () => {
     expect(result.sendable).toHaveLength(0);
     expect(result.excluded[0]).toMatchObject({ reason: "DO_NOT_CONTACT" });
     expect(result.summary.doNotContact).toBe(1);
-  });
-
-  it("blocks a number that previously hard-failed", async () => {
-    // A carrier-confirmed undeliverable number stays undeliverable; resending burns credits.
-    smsLogFindMany.mockResolvedValue([{ phone: "639171568299" }]);
-
-    const result = await screenSmsRecipients([lead(1, "Dead Number Cafe", "09171568299")]);
-
-    expect(result.sendable).toHaveLength(0);
-    expect(result.excluded[0]).toMatchObject({ reason: "PREVIOUSLY_FAILED" });
   });
 
   it("blocks an SME that is still awaiting classification review", async () => {
@@ -120,7 +106,6 @@ describe("SMS recipient screening", () => {
   it("does not query suppression tables when no number is usable", async () => {
     await screenSmsRecipients([lead(1, "No Phone", null)]);
     expect(doNotContactFindMany).not.toHaveBeenCalled();
-    expect(smsLogFindMany).not.toHaveBeenCalled();
   });
 
   it("behaves exactly as before when nothing is suppressed", async () => {

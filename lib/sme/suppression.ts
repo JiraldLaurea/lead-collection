@@ -38,8 +38,9 @@ export async function getSuppressedPhones() {
  * that lives only in the composer can be bypassed by calling the API directly, and the work
  * order treats bypassable opt-out as a non-acceptance condition.
  *
- * Note the behavior is identical to today's whenever the Do Not Contact list is empty and no
- * number has hard-failed, so existing sends are unaffected.
+ * A carrier delivery receipt is recorded for audit purposes, but it is not an opt-out. A
+ * temporary carrier rejection must not permanently prevent an operator from retrying a valid
+ * number; only the explicit Do Not Contact register suppresses a recipient.
  */
 export async function screenSmsRecipients(recipients: SmsRecipientInput[]): Promise<RecipientScreening> {
   const sendable: SmsRecipient[] = [];
@@ -54,26 +55,14 @@ export async function screenSmsRecipients(recipients: SmsRecipientInput[]): Prom
     .map((recipient) => recipient.phone)
     .filter((phone): phone is string => Boolean(phone));
 
-  const [suppressed, hardFailures] = await Promise.all([
-    phones.length
-      ? prisma.doNotContact.findMany({
-          where: { normalizedContact: { in: phones }, channel: "sms", active: true },
-          select: { normalizedContact: true }
-        })
-      : Promise.resolve([]),
-    phones.length
-      ? prisma.smsLog.findMany({
-          // A carrier-confirmed undeliverable number stays undeliverable: resending burns
-          // credits and, on some routes, counts against sender reputation.
-          where: { phone: { in: phones }, deliveryStatus: { in: ["UNDELIV", "REJECTD", "EXPIRED"] } },
-          select: { phone: true },
-          distinct: ["phone"]
-        })
-      : Promise.resolve([])
-  ]);
+  const suppressed = phones.length
+    ? await prisma.doNotContact.findMany({
+        where: { normalizedContact: { in: phones }, channel: "sms", active: true },
+        select: { normalizedContact: true }
+      })
+    : [];
 
   const doNotContact = new Set(suppressed.map((entry) => entry.normalizedContact));
-  const failed = new Set(hardFailures.map((entry) => entry.phone));
   const seen = new Set<string>();
 
   for (const recipient of normalized) {
@@ -94,10 +83,6 @@ export async function screenSmsRecipients(recipients: SmsRecipientInput[]): Prom
     }
     if (doNotContact.has(recipient.phone)) {
       excluded.push({ ...base, reason: "DO_NOT_CONTACT" });
-      continue;
-    }
-    if (failed.has(recipient.phone)) {
-      excluded.push({ ...base, reason: "PREVIOUSLY_FAILED" });
       continue;
     }
     if (seen.has(recipient.phone)) {
@@ -121,8 +106,7 @@ export async function screenSmsRecipients(recipients: SmsRecipientInput[]): Prom
       invalidNumber: count("INVALID_NUMBER"),
       requiresReview: count("CLASSIFICATION_NOT_APPROVED"),
       duplicate: count("DUPLICATE_IN_BATCH"),
-      doNotContact: count("DO_NOT_CONTACT"),
-      previouslyFailed: count("PREVIOUSLY_FAILED")
+      doNotContact: count("DO_NOT_CONTACT")
     }
   };
 }

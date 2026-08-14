@@ -123,6 +123,7 @@ model SmsLog {
   status            String
   provider          String?
   body              String?
+  batchKey          String?  @map("batch_key")
   providerMessageId String?  @map("provider_message_id")
   deliveryStatus    String?  @map("delivery_status")
   deliveryError     String?  @map("delivery_error")
@@ -137,6 +138,7 @@ model SmsLog {
   @@index([sentAt])
   @@index([status])
   @@index([deliveryStatus])
+  @@index([batchKey])
   @@map("sms_logs")
 }
 

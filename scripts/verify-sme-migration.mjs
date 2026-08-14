@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { baseColumnUpgrades, baseDdl } from "./base-schema.mjs";
+import { baseColumnUpgrades, baseDdl, basePostUpgradeDdl } from "./base-schema.mjs";
 import { smeColumnUpgrades, smeDdl, smeTables } from "./sme-schema.mjs";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "qroad-sme-migration-"));
@@ -26,6 +26,7 @@ try {
   const db = new DatabaseSync(databasePath);
   for (const statement of [...baseDdl, ...smeDdl]) db.exec(statement);
   applyColumnUpgrades(db, [...baseColumnUpgrades, ...smeColumnUpgrades]);
+  for (const statement of basePostUpgradeDdl) db.exec(statement);
 
   const tableExists = (name) => Boolean(db.prepare(
     "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?"
